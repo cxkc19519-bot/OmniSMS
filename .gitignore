@@ -1,0 +1,28 @@
+# Local development tooling and caches
+.tooling/
+.gradle/
+**/.gradle/
+.kotlin/
+**/.kotlin/
+**/build/
+**/local.properties
+
+# IDE and operating-system files
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Secrets and production artifacts
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.pem
+*.key
+*.p12
+*.apk
+*.aab
+*.db
+*.sqlite*

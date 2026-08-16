@@ -1,0 +1,19 @@
+# 将 sms.example.com 替换为 OmniSMS 专用域名。
+# 本文件不覆盖 VPS 现有 Nginx 配置；部署前先执行 nginx -t。
+server {
+    listen 80;
+    listen [::]:80;
+    server_name sms.example.com;
+
+    client_max_body_size 64k;
+
+    location / {
+        proxy_pass http://127.0.0.1:8088;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 15s;
+        proxy_send_timeout 15s;
+    }
+}

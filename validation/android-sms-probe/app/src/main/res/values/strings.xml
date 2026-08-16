@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OmniSMS 可行性验证</string>
+    <string name="privacy_summary">此测试 App 没有联网权限，不上传短信。它只保存脱敏发送方、正文长度、摘要、分段数和系统提供的 SIM 标识。</string>
+</resources>
