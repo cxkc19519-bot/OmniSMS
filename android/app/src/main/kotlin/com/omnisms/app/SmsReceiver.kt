@@ -7,13 +7,15 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.UserManager
 import android.provider.Telephony
+import android.util.Log
 import java.util.concurrent.Executors
 
 class SmsReceiver:BroadcastReceiver(){
     override fun onReceive(context:Context,intent:Intent){if(intent.action!=Telephony.Sms.Intents.SMS_RECEIVED_ACTION||!SecureStorage.isEnabled(context))return
         val parts=Telephony.Sms.Intents.getMessagesFromIntent(intent);if(parts.isEmpty())return;val pending=goAsync()
         executor.execute{try{val body=parts.joinToString(""){it.messageBody.orEmpty()};val sender=parts.firstOrNull()?.originatingAddress.orEmpty().ifBlank{"未知发送方"};val receivedAt=parts.minOfOrNull{it.timestampMillis}?:System.currentTimeMillis();val slot=simSlot(intent)
-            OutboxDatabase.get(context).insert(sender,body,receivedAt,slot,slot?.let{"SIM ${it+1}"}.orEmpty(),!isOnline(context));if(context.getSystemService(UserManager::class.java).isUserUnlocked)UploadWorker.enqueue(context)
+            OutboxDatabase.get(context).insert(sender,body,receivedAt,slot,slot?.let{"SIM ${it+1}"}.orEmpty(),!isOnline(context));Log.i("OmniSMS","queue_inserted");SmsForegroundService.requestUpload(context);UploadWorker.enqueue(context)
+        }catch(e:Exception){Log.e("OmniSMS","queue_write_failed_${e.javaClass.simpleName}")
         }finally{pending.finish()}}
     }
     @Suppress("DEPRECATION") private fun simSlot(intent:Intent):Int?{for(key in listOf("phone","slot","slot_id","simId")){val value=intent.extras?.get(key);if(value is Number&&value.toInt()>=0)return value.toInt()};return null}

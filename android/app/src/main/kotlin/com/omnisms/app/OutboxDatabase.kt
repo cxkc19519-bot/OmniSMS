@@ -32,13 +32,18 @@ internal class OutboxDatabase private constructor(context: Context) : SQLiteOpen
         require(writableDatabase.insertOrThrow("outbox_message",null,values)>0); return id
     }
 
-    fun nextDue(now: Long): OutboxMessage? {
-        readableDatabase.query("outbox_message",arrayOf("message_id","sender_encrypted","body_encrypted","received_at","sim_slot","sim_label","queued_offline","attempt_count"),"state IN ('pending','retry') AND next_attempt_at<=?",arrayOf(now.toString()),null,null,"created_at","1").use { c ->
-            if(!c.moveToFirst())return null; val slotIndex=c.getColumnIndexOrThrow("sim_slot")
-            return OutboxMessage(c.getString(0),SecureStorage.decrypt(c.getString(1)).toString(Charsets.UTF_8),SecureStorage.decrypt(c.getString(2)).toString(Charsets.UTF_8),c.getLong(3),if(c.isNull(slotIndex))null else c.getInt(slotIndex),c.getString(5),c.getInt(6)!=0,c.getInt(7))
-        }
+    fun claimNextDue(now: Long): OutboxMessage? = synchronized(this) {
+        val db=writableDatabase; var message:OutboxMessage?=null; db.beginTransaction()
+        try {
+            db.query("outbox_message",arrayOf("message_id","sender_encrypted","body_encrypted","received_at","sim_slot","sim_label","queued_offline","attempt_count"),"state IN ('pending','retry') AND next_attempt_at<=?",arrayOf(now.toString()),null,null,"created_at","1").use { c ->
+                if(c.moveToFirst()){
+                    val slotIndex=c.getColumnIndexOrThrow("sim_slot");val attemptCount=c.getInt(7)+1
+                    message=OutboxMessage(c.getString(0),SecureStorage.decrypt(c.getString(1)).toString(Charsets.UTF_8),SecureStorage.decrypt(c.getString(2)).toString(Charsets.UTF_8),c.getLong(3),if(c.isNull(slotIndex))null else c.getInt(slotIndex),c.getString(5),c.getInt(6)!=0,attemptCount)
+                    db.execSQL("UPDATE outbox_message SET state='sending',attempt_count=? WHERE message_id=?",arrayOf(attemptCount,message!!.id))
+                }
+            };db.setTransactionSuccessful();return@synchronized message
+        }finally{db.endTransaction()}
     }
-    fun markAttempt(id:String){writableDatabase.execSQL("UPDATE outbox_message SET state='sending',attempt_count=attempt_count+1 WHERE message_id=?",arrayOf(id))}
     fun markSent(id:String,now:Long){val v=ContentValues().apply{put("state","sent");putNull("sender_encrypted");putNull("body_encrypted");put("completed_at",now);put("last_error_code","")};writableDatabase.update("outbox_message",v,"message_id=?",arrayOf(id))}
     fun markRetry(id:String,code:String,next:Long){val v=ContentValues().apply{put("state","retry");put("last_error_code",code);put("next_attempt_at",next)};writableDatabase.update("outbox_message",v,"message_id=?",arrayOf(id))}
     fun markPermanent(id:String,code:String){val v=ContentValues().apply{put("state","permanent_failed");put("last_error_code",code)};writableDatabase.update("outbox_message",v,"message_id=?",arrayOf(id))}
