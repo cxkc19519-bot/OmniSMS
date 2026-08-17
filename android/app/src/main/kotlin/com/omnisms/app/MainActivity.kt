@@ -2,6 +2,8 @@ package com.omnisms.app
 
 import android.Manifest
 import android.app.Activity
+import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -41,8 +43,16 @@ class MainActivity:Activity(){
         if(SecureStorage.isEnabled(this))SmsForegroundService.ensureRunning(this)
         setContentView(buildUi())
         refresh()
+        ensureSmsPermissions()
     }
     override fun onResume(){super.onResume();if(::statusTitle.isInitialized)refresh()}
+    override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray){
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        if(requestCode==SMS_PERMISSION_REQUEST){
+            refresh()
+            if(checkSelfPermission(Manifest.permission.READ_SMS)==PackageManager.PERMISSION_GRANTED){InboxReconciler.ensureBaseline(this);SmsForegroundService.ensureRunning(this);SmsForegroundService.requestUpload(this)}
+        }
+    }
 
     private fun buildUi():ScrollView{
         val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(18),dp(20),dp(36));setBackgroundColor(BACKGROUND)}
@@ -79,12 +89,13 @@ class MainActivity:Activity(){
         switchRow.addView(enabled)
         controls.addView(switchRow)
         controls.addView(primaryButton("发送虚构测试短信"){sendTest()})
-        controls.addView(secondaryButton("检查短信权限与系统设置"){startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))},fullParams(top=10))
+        controls.addView(secondaryButton("授权5G消息通知读取"){startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))},fullParams(top=10))
+        controls.addView(secondaryButton("检查短信权限与后台设置"){startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))},fullParams(top=10))
         content.addView(controls,fullParams(bottom=24))
 
         val privacy=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(Color.rgb(232,244,239),16);setPadding(dp(18),dp(17),dp(18),dp(17))}
         privacy.addView(TextView(this).apply{text="隐私保护";textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(TEAL)})
-        privacy.addView(TextView(this).apply{text="短信正文只进入加密队列和你的 Gmail；常驻通知与最近任务不会显示验证码或短信内容。";textSize=14f;setTextColor(Color.rgb(57,91,79));setLineSpacing(dp(3).toFloat(),1f);setPadding(0,dp(6),0,0)})
+        privacy.addView(TextView(this).apply{text="普通短信通过系统短信接口处理；5G消息只读取 OPPO 系统短信 App 的通知。其他应用通知会被立即忽略，内容只进入加密队列和你的 Gmail。";textSize=14f;setTextColor(Color.rgb(57,91,79));setLineSpacing(dp(3).toFloat(),1f);setPadding(0,dp(6),0,0)})
         content.addView(privacy,fullParams())
         content.addView(TextView(this).apply{text="OmniSMS  ·  个人自用安全转发";gravity=Gravity.CENTER;textSize=12f;setTextColor(Color.rgb(131,151,143));setPadding(0,dp(24),0,0)},fullParams())
         return ScrollView(this).apply{isFillViewport=true;addView(content)}
@@ -94,7 +105,7 @@ class MainActivity:Activity(){
         orientation=LinearLayout.VERTICAL;background=rounded(TEAL_DARK,24);setPadding(dp(22),dp(22),dp(22),dp(22));elevation=dp(4).toFloat()
         addView(TextView(this@MainActivity).apply{text="OMNISMS";textSize=12f;letterSpacing=.16f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.rgb(190,232,215))})
         addView(TextView(this@MainActivity).apply{text="你的短信，安全抵达";textSize=29f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE);setPadding(0,dp(9),0,0)})
-        addView(TextView(this@MainActivity).apply{text="锁屏也能自动转发到 Gmail";textSize=15f;setTextColor(Color.rgb(213,239,229));setPadding(0,dp(7),0,0)})
+        addView(TextView(this@MainActivity).apply{text="普通短信与5G消息，锁屏也能转发到 Gmail";textSize=15f;setTextColor(Color.rgb(213,239,229));setPadding(0,dp(7),0,0)})
     }
 
     private fun statusCard():LinearLayout=card().apply{
@@ -111,14 +122,26 @@ class MainActivity:Activity(){
     private fun saveConnection(){try{SecureStorage.saveConfig(this,endpoint.text.toString(),deviceId.text.toString(),secret.text.toString());secret.text.clear();toast("安全连接已保存");refresh()}catch(e:IllegalArgumentException){toast(e.message?:"连接信息格式不正确")}}
     private fun toggle(checked:Boolean){if(checked&&SecureStorage.loadConfig(this)==null){enabled.isChecked=false;toast("请先保存服务器连接");return};SecureStorage.setEnabled(this,checked);if(checked){SmsForegroundService.requestUpload(this);UploadWorker.enqueue(this)}else stopService(Intent(this,SmsForegroundService::class.java));refresh()}
     private fun sendTest(){if(SecureStorage.loadConfig(this)==null){toast("请先保存服务器连接");return};OutboxDatabase.get(this).insert("OmniSMS 测试","这是一条固定的虚构测试短信，不包含真实短信或验证码。",Instant.now().toEpochMilli(),null,"测试",false);SmsForegroundService.requestUpload(this);UploadWorker.enqueue(this);toast("测试短信已加入安全发送队列");refresh()}
+    private fun ensureSmsPermissions(){
+        val required=arrayOf(Manifest.permission.RECEIVE_SMS,Manifest.permission.READ_SMS)
+        val missing=required.filter{checkSelfPermission(it)!=PackageManager.PERMISSION_GRANTED}
+        if(missing.isNotEmpty()&&!SecureStorage.permissionsPrompted(this)){
+            SecureStorage.markPermissionsPrompted(this)
+            requestPermissions(missing.toTypedArray(),SMS_PERMISSION_REQUEST)
+        }
+    }
     private fun refresh(){
         val config=SecureStorage.loadConfig(this);if(config!=null){endpoint.setText(config.endpoint);deviceId.setText(config.deviceId)}
-        val permission=checkSelfPermission(Manifest.permission.RECEIVE_SMS)==PackageManager.PERMISSION_GRANTED
+        val receivePermission=checkSelfPermission(Manifest.permission.RECEIVE_SMS)==PackageManager.PERMISSION_GRANTED
+        val readPermission=checkSelfPermission(Manifest.permission.READ_SMS)==PackageManager.PERMISSION_GRANTED
+        val notificationAccess=getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(ComponentName(this,MessageNotificationListenerService::class.java))
         val counts=runCatching{OutboxDatabase.get(this).counts()}.getOrDefault(Pair(0,0));val running=SecureStorage.isEnabled(this)
         when{
-            !permission->setStatus("需要短信权限","授予权限后才能监听并转发新短信。",WARNING)
+            !receivePermission->setStatus("需要接收短信权限","授予权限后才能监听并转发新短信。",WARNING)
+            !readPermission->setStatus("需要读取短信权限","用于系统清理后的遗漏补发，不会上传历史短信。",WARNING)
             config==null->setStatus("等待安全连接","填写服务器地址、设备编号和密钥即可开始。",WARNING)
             !running->setStatus("短信转发已暂停","开启后，新短信会自动安全发送到 Gmail。",PAUSED)
+            !notificationAccess->setStatus("普通短信转发已运行","授权通知使用权后，才能同时转发 ColorOS 5G消息。",WARNING)
             counts.second>0->setStatus("有短信需要处理","发现 ${counts.second} 条永久失败项，请检查连接后重新配对。",DANGER)
             counts.first>0->setStatus("正在安全发送","有 ${counts.first} 条短信等待网络或重试。",WARNING)
             else->setStatus("短信转发正在运行","已准备好接收双卡新短信并转发到 Gmail。",SUCCESS)
@@ -138,6 +161,7 @@ class MainActivity:Activity(){
     private fun toast(message:String)=Toast.makeText(this,message,Toast.LENGTH_LONG).show()
 
     companion object{
+        private const val SMS_PERMISSION_REQUEST=1201
         private val BACKGROUND=Color.rgb(245,248,246)
         private val TEAL_DARK=Color.rgb(15,76,61)
         private val TEAL=Color.rgb(17,111,84)

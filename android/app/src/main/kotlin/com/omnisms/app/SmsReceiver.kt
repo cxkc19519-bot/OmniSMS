@@ -12,9 +12,11 @@ import java.util.concurrent.Executors
 
 class SmsReceiver:BroadcastReceiver(){
     override fun onReceive(context:Context,intent:Intent){if(intent.action!=Telephony.Sms.Intents.SMS_RECEIVED_ACTION||!SecureStorage.isEnabled(context))return
-        val parts=Telephony.Sms.Intents.getMessagesFromIntent(intent);if(parts.isEmpty())return;val pending=goAsync()
+        val parts=Telephony.Sms.Intents.getMessagesFromIntent(intent);if(parts.isEmpty())return
+        SecureStorage.markStandardSmsReceived(context)
+        val pending=goAsync()
         executor.execute{try{val body=parts.joinToString(""){it.messageBody.orEmpty()};val sender=parts.firstOrNull()?.originatingAddress.orEmpty().ifBlank{"未知发送方"};val receivedAt=parts.minOfOrNull{it.timestampMillis}?:System.currentTimeMillis();val slot=simSlot(intent)
-            OutboxDatabase.get(context).insert(sender,body,receivedAt,slot,slot?.let{"SIM ${it+1}"}.orEmpty(),!isOnline(context));Log.i("OmniSMS","queue_inserted");SmsForegroundService.requestUpload(context);UploadWorker.enqueue(context)
+            val inserted=OutboxDatabase.get(context).insert(sender,body,receivedAt,slot,slot?.let{"SIM ${it+1}"}.orEmpty(),!isOnline(context),MessageFingerprint.create(sender,body,receivedAt));Log.i("OmniSMS",if(inserted)"queue_inserted" else "queue_duplicate_ignored");SmsForegroundService.requestUpload(context);UploadWorker.enqueue(context)
         }catch(e:Exception){Log.e("OmniSMS","queue_write_failed_${e.javaClass.simpleName}")
         }finally{pending.finish()}}
     }

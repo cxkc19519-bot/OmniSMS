@@ -18,6 +18,10 @@ internal object SecureStorage {
     private const val PREFS = "omnisms_secure_config"
     private const val CONFIG = "server_config"
     private const val ENABLED = "forwarding_enabled"
+    private const val RECOVERY_ID = "sms_recovery_id"
+    private const val PERMISSIONS_PROMPTED = "sms_permissions_prompted_v2"
+    private const val NOTIFICATION_BASELINED = "notification_listener_baselined_v2"
+    private const val LAST_STANDARD_SMS_AT = "last_standard_sms_at"
 
     fun saveConfig(context: Context, endpoint: String, deviceId: String, secretBase64Url: String) {
         val normalizedEndpoint = endpoint.trim().removeSuffix("/")
@@ -38,6 +42,16 @@ internal object SecureStorage {
 
     fun setEnabled(context: Context, enabled: Boolean) { preferences(context).edit().putBoolean(ENABLED, enabled).apply() }
     fun isEnabled(context: Context): Boolean = preferences(context).getBoolean(ENABLED, false)
+    fun recoveryId(context:Context):Long?=preferences(context).let{if(it.contains(RECOVERY_ID))it.getLong(RECOVERY_ID,0L)else null}
+    fun setRecoveryId(context:Context,value:Long){preferences(context).edit().putLong(RECOVERY_ID,value).apply()}
+    fun permissionsPrompted(context:Context)=preferences(context).getBoolean(PERMISSIONS_PROMPTED,false)
+    fun markPermissionsPrompted(context:Context){preferences(context).edit().putBoolean(PERMISSIONS_PROMPTED,true).apply()}
+    fun notificationBaselined(context:Context)=preferences(context).getBoolean(NOTIFICATION_BASELINED,false)
+    fun markNotificationBaselined(context:Context){preferences(context).edit().putBoolean(NOTIFICATION_BASELINED,true).apply()}
+    fun lastStandardSmsAt(context:Context)=preferences(context).getLong(LAST_STANDARD_SMS_AT,0L)
+    fun markStandardSmsReceived(context:Context,receivedAt:Long=System.currentTimeMillis()){
+        preferences(context).edit().putLong(LAST_STANDARD_SMS_AT,receivedAt).apply()
+    }
 
     private fun preferences(context: Context) = context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

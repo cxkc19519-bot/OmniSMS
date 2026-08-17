@@ -12,24 +12,30 @@ internal data class OutboxMessage(
 )
 
 internal class OutboxDatabase private constructor(context: Context) : SQLiteOpenHelper(
-    context.createDeviceProtectedStorageContext(), "omnisms_outbox.sqlite3", null, 1
+    context.createDeviceProtectedStorageContext(), "omnisms_outbox.sqlite3", null, 2
 ) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE outbox_message(
             message_id TEXT PRIMARY KEY, sender_encrypted TEXT, body_encrypted TEXT, received_at INTEGER NOT NULL,
             sim_slot INTEGER, sim_label TEXT NOT NULL, queued_offline INTEGER NOT NULL, state TEXT NOT NULL,
             attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL, last_error_code TEXT NOT NULL DEFAULT '',
-            created_at INTEGER NOT NULL, completed_at INTEGER
+            created_at INTEGER NOT NULL, completed_at INTEGER, source_fingerprint TEXT
         )""")
         db.execSQL("CREATE INDEX idx_outbox_due ON outbox_message(state,next_attempt_at)")
         db.execSQL("CREATE INDEX idx_outbox_created ON outbox_message(created_at)")
+        db.execSQL("CREATE UNIQUE INDEX idx_outbox_source_fingerprint ON outbox_message(source_fingerprint) WHERE source_fingerprint IS NOT NULL")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { error("No migration from $oldVersion to $newVersion") }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if(oldVersion<2){
+            db.execSQL("ALTER TABLE outbox_message ADD COLUMN source_fingerprint TEXT")
+            db.execSQL("CREATE UNIQUE INDEX idx_outbox_source_fingerprint ON outbox_message(source_fingerprint) WHERE source_fingerprint IS NOT NULL")
+        }
+    }
 
-    fun insert(sender: String, body: String, receivedAt: Long, simSlot: Int?, simLabel: String, queuedOffline: Boolean): String {
+    fun insert(sender: String, body: String, receivedAt: Long, simSlot: Int?, simLabel: String, queuedOffline: Boolean, sourceFingerprint:String?=null): Boolean = synchronized(this) {
         val id = UUID.randomUUID().toString(); val now = System.currentTimeMillis()
-        val values = ContentValues().apply { put("message_id",id);put("sender_encrypted",SecureStorage.encrypt(sender.toByteArray()));put("body_encrypted",SecureStorage.encrypt(body.toByteArray()));put("received_at",receivedAt);if(simSlot==null)putNull("sim_slot")else put("sim_slot",simSlot);put("sim_label",simLabel);put("queued_offline",if(queuedOffline)1 else 0);put("state","pending");put("next_attempt_at",now);put("created_at",now) }
-        require(writableDatabase.insertOrThrow("outbox_message",null,values)>0); return id
+        val values = ContentValues().apply { put("message_id",id);put("sender_encrypted",SecureStorage.encrypt(sender.toByteArray()));put("body_encrypted",SecureStorage.encrypt(body.toByteArray()));put("received_at",receivedAt);if(simSlot==null)putNull("sim_slot")else put("sim_slot",simSlot);put("sim_label",simLabel);put("queued_offline",if(queuedOffline)1 else 0);put("state","pending");put("next_attempt_at",now);put("created_at",now);if(sourceFingerprint==null)putNull("source_fingerprint")else put("source_fingerprint",sourceFingerprint) }
+        return@synchronized writableDatabase.insertWithOnConflict("outbox_message",null,values,SQLiteDatabase.CONFLICT_IGNORE)!=-1L
     }
 
     fun claimNextDue(now: Long): OutboxMessage? = synchronized(this) {
@@ -39,7 +45,7 @@ internal class OutboxDatabase private constructor(context: Context) : SQLiteOpen
                 if(c.moveToFirst()){
                     val slotIndex=c.getColumnIndexOrThrow("sim_slot");val attemptCount=c.getInt(7)+1
                     message=OutboxMessage(c.getString(0),SecureStorage.decrypt(c.getString(1)).toString(Charsets.UTF_8),SecureStorage.decrypt(c.getString(2)).toString(Charsets.UTF_8),c.getLong(3),if(c.isNull(slotIndex))null else c.getInt(slotIndex),c.getString(5),c.getInt(6)!=0,attemptCount)
-                    db.execSQL("UPDATE outbox_message SET state='sending',attempt_count=? WHERE message_id=?",arrayOf(attemptCount,message!!.id))
+                    db.execSQL("UPDATE outbox_message SET state='sending',attempt_count=? WHERE message_id=?",arrayOf<Any>(attemptCount,message!!.id))
                 }
             };db.setTransactionSuccessful();return@synchronized message
         }finally{db.endTransaction()}

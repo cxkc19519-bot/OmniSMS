@@ -16,9 +16,9 @@ class SmsForegroundService:Service(){
         val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification=Notification.Builder(this,CHANNEL).setSmallIcon(com.omnisms.app.R.drawable.ic_launcher).setContentTitle("OmniSMS 正在运行").setContentText("新短信将安全转发，通知中不会显示短信内容").setContentIntent(open).setOngoing(true).build();startForeground(ID,notification)}
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
-        if(intent?.action==ACTION_UPLOAD)uploader.execute{
+        uploader.execute{
             val wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"OmniSMS:upload").apply{setReferenceCounted(false);acquire(30_000)}
-            try{if(UploadProcessor.drain(applicationContext)==UploadProcessor.Result.RETRY)UploadWorker.enqueue(applicationContext)}finally{if(wake.isHeld)wake.release()}
+            try{InboxReconciler.reconcile(applicationContext);if(UploadProcessor.drain(applicationContext)==UploadProcessor.Result.RETRY)UploadWorker.enqueue(applicationContext)}finally{if(wake.isHeld)wake.release()}
         }
         return START_STICKY
     }
