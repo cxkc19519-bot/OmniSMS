@@ -1,0 +1,6 @@
+# Copy to signing.local.properties and replace every placeholder locally.
+# Never commit the real file or the keystore.
+storeFile=../.release/omnisms-release.jks
+storePassword=REPLACE_WITH_A_STRONG_UNIQUE_PASSWORD
+keyAlias=omnisms
+keyPassword=REPLACE_WITH_THE_SAME_OR_ANOTHER_STRONG_PASSWORD

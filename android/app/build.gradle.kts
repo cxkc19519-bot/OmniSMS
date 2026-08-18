@@ -1,5 +1,12 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
+}
+
+val signingPropertiesFile = rootProject.file("signing.local.properties")
+val signingProperties = Properties().apply {
+    if (signingPropertiesFile.exists()) signingPropertiesFile.inputStream().use(::load)
 }
 
 android {
@@ -24,10 +31,26 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        if (signingPropertiesFile.exists()) {
+            create("release") {
+                storeFile = rootProject.file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (signingPropertiesFile.exists()) signingConfig = signingConfigs.getByName("release")
         }
     }
 }

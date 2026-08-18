@@ -26,3 +26,5 @@ Thumbs.db
 *.aab
 *.db
 *.sqlite*
+**/signing.local.properties
+.release/
