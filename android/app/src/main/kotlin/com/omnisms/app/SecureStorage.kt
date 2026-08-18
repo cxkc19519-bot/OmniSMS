@@ -20,7 +20,7 @@ internal object SecureStorage {
     private const val ENABLED = "forwarding_enabled"
     private const val RECOVERY_ID = "sms_recovery_id"
     private const val PERMISSIONS_PROMPTED = "sms_permissions_prompted_v2"
-    private const val NOTIFICATION_BASELINED = "notification_listener_baselined_v2"
+    private const val NOTIFICATION_BASELINED = "notification_listener_baselined_v3"
     private const val LAST_STANDARD_SMS_AT = "last_standard_sms_at"
 
     fun saveConfig(context: Context, endpoint: String, deviceId: String, secretBase64Url: String) {

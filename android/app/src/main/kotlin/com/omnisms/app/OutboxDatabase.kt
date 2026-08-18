@@ -38,6 +38,11 @@ internal class OutboxDatabase private constructor(context: Context) : SQLiteOpen
         return@synchronized writableDatabase.insertWithOnConflict("outbox_message",null,values,SQLiteDatabase.CONFLICT_IGNORE)!=-1L
     }
 
+    fun rememberSourceFingerprint(sourceFingerprint:String,receivedAt:Long):Boolean=synchronized(this){
+        val now=System.currentTimeMillis();val values=ContentValues().apply{put("message_id",UUID.randomUUID().toString());putNull("sender_encrypted");putNull("body_encrypted");put("received_at",receivedAt);putNull("sim_slot");put("sim_label","5G消息去重");put("queued_offline",0);put("state","sent");put("attempt_count",0);put("next_attempt_at",now);put("created_at",now);put("completed_at",now);put("source_fingerprint",sourceFingerprint)}
+        return@synchronized writableDatabase.insertWithOnConflict("outbox_message",null,values,SQLiteDatabase.CONFLICT_IGNORE)!=-1L
+    }
+
     fun claimNextDue(now: Long): OutboxMessage? = synchronized(this) {
         val db=writableDatabase; var message:OutboxMessage?=null; db.beginTransaction()
         try {

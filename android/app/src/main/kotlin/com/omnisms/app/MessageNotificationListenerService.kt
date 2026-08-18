@@ -55,9 +55,9 @@ class MessageNotificationListenerService:NotificationListenerService(){
     }
 
     private fun process(candidate:Candidate){
-        if(NotificationPolicy.isRecentStandardSms(System.currentTimeMillis(),SecureStorage.lastStandardSmsAt(this))){Log.i("OmniSMS","notification_ignored_recent_sms");return}
-        if(isStandardSmsAlreadyPresent(candidate.body)){Log.i("OmniSMS","notification_ignored_standard_sms");return}
         val eventFingerprint=MessageFingerprint.create("notification:${candidate.notificationKey}","",candidate.sourceTimestamp)
+        if(NotificationPolicy.isRecentStandardSms(System.currentTimeMillis(),SecureStorage.lastStandardSmsAt(this))){OutboxDatabase.get(this).rememberSourceFingerprint(eventFingerprint,candidate.receivedAt);Log.i("OmniSMS","notification_ignored_recent_sms");return}
+        if(isStandardSmsAlreadyPresent(candidate.body)){OutboxDatabase.get(this).rememberSourceFingerprint(eventFingerprint,candidate.receivedAt);Log.i("OmniSMS","notification_ignored_standard_sms");return}
         val inserted=OutboxDatabase.get(this).insert(candidate.sender,candidate.body,candidate.receivedAt,null,"5G消息",!isOnline(this),eventFingerprint)
         Log.i("OmniSMS",if(inserted)"notification_queue_inserted" else "notification_duplicate_ignored")
         SmsForegroundService.requestUpload(this);UploadWorker.enqueue(this)
