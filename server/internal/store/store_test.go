@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -79,5 +81,53 @@ func TestCleanupAndClearBodyAfterDelivery(t *testing.T) {
 	deleted, err := s.Cleanup(ctx, now.Add(2*time.Hour))
 	if err != nil || deleted != 1 {
 		t.Fatalf("Cleanup()=%d,%v", deleted, err)
+	}
+}
+
+func TestBackupRestoreWithFictionalPendingData(t *testing.T) {
+	dir := t.TempDir()
+	originalPath := filepath.Join(dir, "original.sqlite3")
+	backupPath := filepath.Join(dir, "backup.sqlite3")
+	now := time.Date(2026, 8, 18, 1, 2, 3, 0, time.UTC)
+	s, err := Open(originalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := testDelivery(now, "message-example-backup")
+	if _, err = s.Accept(context.Background(), d, d.MessageID, "nonce-example-backup", now.Add(time.Hour), now.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := os.Open(originalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	destination, err := os.OpenFile(backupPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = io.Copy(destination, source); err != nil {
+		destination.Close()
+		t.Fatal(err)
+	}
+	if err = destination.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := Open(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	got, due, err := restored.NextDue(context.Background(), now)
+	if err != nil || !due {
+		t.Fatalf("restored delivery due=%v err=%v", due, err)
+	}
+	if got.MessageID != d.MessageID || got.Body != d.Body || got.Sender != d.Sender {
+		t.Fatalf("restored delivery identity or fictional content differs")
 	}
 }

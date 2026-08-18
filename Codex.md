@@ -21,6 +21,7 @@ OmniSMS 是一套个人自用的短信转发系统：OPPO A72 5G（ColorOS 12.1�
 | 部署与运维 | `docs/08-deployment-and-operations.md` | VPS 部署、备份、监控、升级和故障处理 |
 | 可行性验证 | `docs/09-feasibility-validation.md` | 阶段 0 的依据、实测步骤、结果和阻塞项 |
 | 开发状态 | `docs/10-development-status.md` | 已实现能力、自动化验证、未完成项和下一步入口 |
+| 发布验收记录 | `docs/11-release-acceptance-0.3.4.md` | 0.3.4 各验收用例、例外、回滚与备份证据 |
 
 ## 工作原则
 
