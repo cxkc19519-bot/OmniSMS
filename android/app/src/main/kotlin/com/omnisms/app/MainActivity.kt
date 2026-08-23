@@ -12,6 +12,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
@@ -90,6 +91,7 @@ class MainActivity:Activity(){
         controls.addView(switchRow)
         controls.addView(primaryButton("发送虚构测试短信"){sendTest()})
         controls.addView(secondaryButton("授权5G消息通知读取"){startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))},fullParams(top=10))
+        controls.addView(secondaryButton("允许锁屏后台运行"){requestBatteryExemption()},fullParams(top=10))
         controls.addView(secondaryButton("检查短信权限与后台设置"){startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))},fullParams(top=10))
         content.addView(controls,fullParams(bottom=24))
 
@@ -122,6 +124,10 @@ class MainActivity:Activity(){
     private fun saveConnection(){try{SecureStorage.saveConfig(this,endpoint.text.toString(),deviceId.text.toString(),secret.text.toString());secret.text.clear();toast("安全连接已保存");refresh()}catch(e:IllegalArgumentException){toast(e.message?:"连接信息格式不正确")}}
     private fun toggle(checked:Boolean){if(checked&&SecureStorage.loadConfig(this)==null){enabled.isChecked=false;toast("请先保存服务器连接");return};SecureStorage.setEnabled(this,checked);if(checked){SmsForegroundService.requestUpload(this);UploadWorker.enqueue(this)}else stopService(Intent(this,SmsForegroundService::class.java));refresh()}
     private fun sendTest(){if(SecureStorage.loadConfig(this)==null){toast("请先保存服务器连接");return};OutboxDatabase.get(this).insert("OmniSMS 测试","这是一条固定的虚构测试短信，不包含真实短信或验证码。",Instant.now().toEpochMilli(),null,"测试",false);SmsForegroundService.requestUpload(this);UploadWorker.enqueue(this);toast("测试短信已加入安全发送队列");refresh()}
+    private fun requestBatteryExemption(){
+        val intent=Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:$packageName"))
+        runCatching{startActivity(intent)}.onFailure{startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))}
+    }
     private fun ensureSmsPermissions(){
         val required=arrayOf(Manifest.permission.RECEIVE_SMS,Manifest.permission.READ_SMS)
         val missing=required.filter{checkSelfPermission(it)!=PackageManager.PERMISSION_GRANTED}
@@ -134,6 +140,7 @@ class MainActivity:Activity(){
         val config=SecureStorage.loadConfig(this);if(config!=null){endpoint.setText(config.endpoint);deviceId.setText(config.deviceId)}
         val receivePermission=checkSelfPermission(Manifest.permission.RECEIVE_SMS)==PackageManager.PERMISSION_GRANTED
         val readPermission=checkSelfPermission(Manifest.permission.READ_SMS)==PackageManager.PERMISSION_GRANTED
+        val batteryExempt=getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
         val notificationAccess=getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(ComponentName(this,MessageNotificationListenerService::class.java))
         val counts=runCatching{OutboxDatabase.get(this).counts()}.getOrDefault(Pair(0,0));val running=SecureStorage.isEnabled(this)
         when{
@@ -141,6 +148,7 @@ class MainActivity:Activity(){
             !readPermission->setStatus("需要读取短信权限","用于系统清理后的遗漏补发，不会上传历史短信。",WARNING)
             config==null->setStatus("等待安全连接","填写服务器地址、设备编号和密钥即可开始。",WARNING)
             !running->setStatus("短信转发已暂停","开启后，新短信会自动安全发送到 Gmail。",PAUSED)
+            !batteryExempt->setStatus("需要允许锁屏后台运行","关闭 OmniSMS 的电池优化，并在 ColorOS 中允许自启动和后台运行。",WARNING)
             !notificationAccess->setStatus("普通短信转发已运行","授权通知使用权后，才能同时转发 ColorOS 5G消息。",WARNING)
             counts.second>0->setStatus("有短信需要处理","发现 ${counts.second} 条永久失败项，请检查连接后重新配对。",DANGER)
             counts.first>0->setStatus("正在安全发送","有 ${counts.first} 条短信等待网络或重试。",WARNING)
