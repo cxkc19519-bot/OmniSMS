@@ -21,6 +21,7 @@ import java.util.concurrent.Executors
 
 class SmsForegroundService:Service(){
     private val uploader=Executors.newSingleThreadExecutor()
+    private val drainCoalescer=DrainCoalescer()
     private val liveSmsReceiver=SmsReceiver()
     private var liveSmsReceiverRegistered=false
     private val inboxObserver=object:ContentObserver(Handler(Looper.getMainLooper())){
@@ -34,10 +35,24 @@ class SmsForegroundService:Service(){
         ensureLiveSmsReceiverRegistered();ensureInboxObserverRegistered();scheduleDrain()
         return START_STICKY
     }
-    private fun scheduleDrain(){runCatching{uploader.execute{
+    private fun scheduleDrain(){
+        if(!drainCoalescer.request())return
+        runCatching{uploader.execute{
+            try{
+                do{drainOnce()}while(drainCoalescer.continueOrRelease())
+            }catch(e:Exception){
+                drainCoalescer.reset()
+                Log.w("OmniSMS","upload_drain_failed_${e.javaClass.simpleName}")
+            }
+        }}.onFailure{
+            drainCoalescer.reset()
+            Log.w("OmniSMS","upload_handoff_failed_${it.javaClass.simpleName}")
+        }
+    }
+    private fun drainOnce(){
         val wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"OmniSMS:upload").apply{setReferenceCounted(false);acquire(30_000)}
         try{InboxReconciler.reconcile(applicationContext);if(UploadProcessor.drain(applicationContext)==UploadProcessor.Result.RETRY)UploadWorker.enqueue(applicationContext)}finally{if(wake.isHeld)wake.release()}
-    }}.onFailure{Log.w("OmniSMS","upload_handoff_failed_${it.javaClass.simpleName}")}}
+    }
     private fun ensureLiveSmsReceiverRegistered(){
         if(liveSmsReceiverRegistered)return
         runCatching{registerLiveSmsReceiver()}.onFailure{Log.w("OmniSMS","live_receiver_registration_failed_${it.javaClass.simpleName}")}
