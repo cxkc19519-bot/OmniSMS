@@ -22,6 +22,8 @@ import java.util.concurrent.Executors
 class SmsForegroundService:Service(){
     private val uploader=Executors.newSingleThreadExecutor()
     private val drainCoalescer=DrainCoalescer()
+    private val recoveryHandler=Handler(Looper.getMainLooper())
+    private val delayedRecovery=Runnable{scheduleDrain()}
     private val liveSmsReceiver=SmsReceiver()
     private var liveSmsReceiverRegistered=false
     private val inboxObserver=object:ContentObserver(Handler(Looper.getMainLooper())){
@@ -33,8 +35,10 @@ class SmsForegroundService:Service(){
         val notification=Notification.Builder(this,CHANNEL).setSmallIcon(com.omnisms.app.R.drawable.ic_launcher).setContentTitle("OmniSMS 正在运行").setContentText("新短信将安全转发，通知中不会显示短信内容").setContentIntent(open).setOngoing(true).build();startForeground(ID,notification)}
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
         ensureLiveSmsReceiverRegistered();ensureInboxObserverRegistered();scheduleDrain()
+        if(intent?.action==ACTION_SMS_RECOVERY)scheduleDelayedRecovery()
         return START_STICKY
     }
+    private fun scheduleDelayedRecovery(){recoveryHandler.removeCallbacks(delayedRecovery);recoveryHandler.postDelayed(delayedRecovery,RECOVERY_DELAY_MS)}
     private fun scheduleDrain(){
         if(!drainCoalescer.request())return
         runCatching{uploader.execute{
@@ -74,18 +78,22 @@ class SmsForegroundService:Service(){
         liveSmsReceiverRegistered=true
     }
     override fun onDestroy(){
+        recoveryHandler.removeCallbacks(delayedRecovery)
         if(liveSmsReceiverRegistered){unregisterReceiver(liveSmsReceiver);liveSmsReceiverRegistered=false}
         if(inboxObserverRegistered){contentResolver.unregisterContentObserver(inboxObserver);inboxObserverRegistered=false}
         uploader.shutdownNow();super.onDestroy()
     }
     override fun onBind(intent:Intent?):IBinder?=null
     companion object{
-        private const val CHANNEL="omnisms_status";private const val ID=1001;private const val ACTION_UPLOAD="com.omnisms.app.action.UPLOAD"
+        private const val CHANNEL="omnisms_status";private const val ID=1001;private const val ACTION_UPLOAD="com.omnisms.app.action.UPLOAD";private const val ACTION_SMS_RECOVERY="com.omnisms.app.action.SMS_RECOVERY";private const val RECOVERY_DELAY_MS=5_000L
         fun ensureRunning(context:android.content.Context){
             try{context.startForegroundService(Intent(context,SmsForegroundService::class.java))}catch(_:IllegalStateException){UploadWorker.enqueue(context)}
         }
         fun requestUpload(context:android.content.Context){
             try{context.startForegroundService(Intent(context,SmsForegroundService::class.java).setAction(ACTION_UPLOAD))}catch(_:IllegalStateException){UploadWorker.enqueue(context)}
+        }
+        fun requestSmsRecovery(context:android.content.Context){
+            try{context.startForegroundService(Intent(context,SmsForegroundService::class.java).setAction(ACTION_SMS_RECOVERY))}catch(_:IllegalStateException){UploadWorker.enqueue(context)}
         }
     }
 }

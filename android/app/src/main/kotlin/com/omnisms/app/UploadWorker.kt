@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 
 internal class UploadWorker(context:Context,params:WorkerParameters):Worker(context,params){
     override fun doWork():Result{
+        InboxReconciler.reconcile(applicationContext)
         return when(UploadProcessor.drain(applicationContext)){
             UploadProcessor.Result.COMPLETE->Result.success()
             UploadProcessor.Result.RETRY->Result.retry()
