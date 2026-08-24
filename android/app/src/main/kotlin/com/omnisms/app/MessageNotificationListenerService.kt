@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.provider.Telephony
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.telephony.SubscriptionManager
 import android.util.Log
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -57,7 +58,12 @@ class MessageNotificationListenerService:NotificationListenerService(){
     private fun process(candidate:Candidate){
         val eventFingerprint=MessageFingerprint.create("notification:${candidate.notificationKey}","",candidate.sourceTimestamp)
         if(NotificationPolicy.isRecentStandardSms(System.currentTimeMillis(),SecureStorage.lastStandardSmsAt(this))){OutboxDatabase.get(this).rememberSourceFingerprint(eventFingerprint,candidate.receivedAt);Log.i("OmniSMS","notification_ignored_recent_sms");return}
-        if(isStandardSmsAlreadyPresent(candidate.body)){OutboxDatabase.get(this).rememberSourceFingerprint(eventFingerprint,candidate.receivedAt);Log.i("OmniSMS","notification_ignored_standard_sms");return}
+        matchingStandardSms(candidate.body)?.let{standard->
+            val db=OutboxDatabase.get(this);db.rememberSourceFingerprint(eventFingerprint,candidate.receivedAt)
+            val inserted=db.insert(standard.sender,standard.body,standard.receivedAt,standard.simSlot,standard.simSlot?.let{"SIM ${it+1}"}.orEmpty(),!isOnline(this),standard.sourceFingerprint)
+            Log.i("OmniSMS",if(inserted)"notification_standard_sms_queued" else "notification_ignored_standard_sms")
+            SmsForegroundService.requestUpload(this);UploadWorker.enqueue(this);return
+        }
         val inserted=OutboxDatabase.get(this).insert(candidate.sender,candidate.body,candidate.receivedAt,null,"5G消息",!isOnline(this),eventFingerprint)
         Log.i("OmniSMS",if(inserted)"notification_queue_inserted" else "notification_duplicate_ignored")
         SmsForegroundService.requestUpload(this);UploadWorker.enqueue(this)
@@ -75,12 +81,12 @@ class MessageNotificationListenerService:NotificationListenerService(){
         return Candidate(sbn.key,sender,body,sourceTimestamp,postTime)
     }
 
-    private fun isStandardSmsAlreadyPresent(body:String):Boolean{
-        contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI,arrayOf(Telephony.TextBasedSmsColumns.BODY),null,null,"_id DESC LIMIT 30")?.use{rows->
-            val bodyIndex=rows.getColumnIndexOrThrow(Telephony.TextBasedSmsColumns.BODY);var checked=0
-            while(rows.moveToNext()&&checked++<30)if(rows.getString(bodyIndex).orEmpty()==body)return true
+    private fun matchingStandardSms(body:String):StandardSms?{
+        contentResolver.query(Telephony.Sms.Inbox.CONTENT_URI,arrayOf(Telephony.TextBasedSmsColumns.ADDRESS,Telephony.TextBasedSmsColumns.BODY,Telephony.TextBasedSmsColumns.DATE,Telephony.TextBasedSmsColumns.DATE_SENT,Telephony.TextBasedSmsColumns.SUBSCRIPTION_ID),null,null,"_id DESC LIMIT 30")?.use{rows->
+            val addressIndex=rows.getColumnIndexOrThrow(Telephony.TextBasedSmsColumns.ADDRESS);val bodyIndex=rows.getColumnIndexOrThrow(Telephony.TextBasedSmsColumns.BODY);val dateIndex=rows.getColumnIndexOrThrow(Telephony.TextBasedSmsColumns.DATE);val dateSentIndex=rows.getColumnIndexOrThrow(Telephony.TextBasedSmsColumns.DATE_SENT);val subscriptionIndex=rows.getColumnIndexOrThrow(Telephony.TextBasedSmsColumns.SUBSCRIPTION_ID);var checked=0
+            while(rows.moveToNext()&&checked++<30){val storedBody=rows.getString(bodyIndex).orEmpty();if(storedBody!=body)continue;val sender=rows.getString(addressIndex).orEmpty().ifBlank{"未知发送方"};val receivedAt=rows.getLong(dateIndex);val sentAt=rows.getLong(dateSentIndex).takeIf{it>0}?:receivedAt;val slot=runCatching{SubscriptionManager.getSlotIndex(rows.getInt(subscriptionIndex))}.getOrNull()?.takeIf{it>=0};return StandardSms(sender,storedBody,receivedAt,slot,MessageFingerprint.create(sender,storedBody,sentAt))}
         }
-        return false
+        return null
     }
 
     private fun isOnline(context:Context):Boolean{
@@ -90,5 +96,6 @@ class MessageNotificationListenerService:NotificationListenerService(){
     }
 
     private data class Candidate(val notificationKey:String,val sender:String,val body:String,val sourceTimestamp:Long,val receivedAt:Long)
+    private data class StandardSms(val sender:String,val body:String,val receivedAt:Long,val simSlot:Int?,val sourceFingerprint:String)
     companion object{private const val MAX_AGE=24*60*60*1000L;private const val DEBOUNCE_MILLIS=2_500L}
 }
