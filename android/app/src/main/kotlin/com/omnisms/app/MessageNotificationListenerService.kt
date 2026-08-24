@@ -4,6 +4,7 @@ import android.app.Notification
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.PowerManager
 import android.provider.Telephony
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -17,6 +18,7 @@ class MessageNotificationListenerService:NotificationListenerService(){
     private val executor=Executors.newSingleThreadScheduledExecutor()
     private val pending=mutableMapOf<String,Candidate>()
     private val scheduled=mutableMapOf<String,ScheduledFuture<*>>()
+    private val notificationWakeLocks=mutableMapOf<String,PowerManager.WakeLock>()
     private var suppressExistingBefore=0L
 
     override fun onListenerConnected(){
@@ -35,15 +37,17 @@ class MessageNotificationListenerService:NotificationListenerService(){
         handleAsync(sbn)
     }
 
-    override fun onDestroy(){executor.shutdownNow();super.onDestroy()}
+    override fun onDestroy(){executor.shutdownNow();releaseAllNotificationWakeLocks();super.onDestroy()}
 
     private fun handleAsync(sbn:StatusBarNotification){
         if(!NotificationPolicy.isAllowedPackage(sbn.packageName)||(sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY)!=0||!SecureStorage.isEnabled(this)||sbn.postTime<suppressExistingBefore)return
-        executor.execute{runCatching{stage(sbn)}.onFailure{Log.w("OmniSMS","notification_deferred_${it.javaClass.simpleName}")}}
+        holdNotificationWakeLock(sbn.key)
+        runCatching{executor.execute{runCatching{stage(sbn)}.onFailure{releaseNotificationWakeLock(sbn.key);Log.w("OmniSMS","notification_deferred_${it.javaClass.simpleName}")}}}
+            .onFailure{releaseNotificationWakeLock(sbn.key);Log.w("OmniSMS","notification_handoff_failed_${it.javaClass.simpleName}")}
     }
 
     private fun stage(sbn:StatusBarNotification){
-        val candidate=extract(sbn)?:run{Log.i("OmniSMS","notification_missing_content");return}
+        val candidate=extract(sbn)?:run{releaseNotificationWakeLock(sbn.key);Log.i("OmniSMS","notification_missing_content");return}
         val current=pending[sbn.key]
         pending[sbn.key]=if(current==null||candidate.body.length>=current.body.length)candidate else current
         scheduled.remove(sbn.key)?.cancel(false)
@@ -51,8 +55,8 @@ class MessageNotificationListenerService:NotificationListenerService(){
     }
 
     private fun flush(key:String){
-        scheduled.remove(key);val candidate=pending.remove(key)?:return
-        runCatching{process(candidate)}.onFailure{Log.w("OmniSMS","notification_deferred_${it.javaClass.simpleName}")}
+        scheduled.remove(key);val candidate=pending.remove(key)?:run{releaseNotificationWakeLock(key);return}
+        try{runCatching{process(candidate)}.onFailure{Log.w("OmniSMS","notification_deferred_${it.javaClass.simpleName}")}}finally{releaseNotificationWakeLock(key)}
     }
 
     private fun process(candidate:Candidate){
@@ -89,6 +93,15 @@ class MessageNotificationListenerService:NotificationListenerService(){
         return null
     }
 
+    private fun holdNotificationWakeLock(key:String){
+        synchronized(notificationWakeLocks){
+            val wake=notificationWakeLocks.getOrPut(key){getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"OmniSMS:notification-debounce").apply{setReferenceCounted(false)}}
+            wake.acquire(NOTIFICATION_WAKE_TIMEOUT_MS)
+        }
+    }
+    private fun releaseNotificationWakeLock(key:String){synchronized(notificationWakeLocks){notificationWakeLocks.remove(key)?.let{if(it.isHeld)it.release()}}}
+    private fun releaseAllNotificationWakeLocks(){synchronized(notificationWakeLocks){notificationWakeLocks.values.forEach{if(it.isHeld)it.release()};notificationWakeLocks.clear()}}
+
     private fun isOnline(context:Context):Boolean{
         val manager=context.getSystemService(ConnectivityManager::class.java);val network=manager.activeNetwork?:return false
         val capabilities=manager.getNetworkCapabilities(network)?:return false
@@ -97,5 +110,5 @@ class MessageNotificationListenerService:NotificationListenerService(){
 
     private data class Candidate(val notificationKey:String,val sender:String,val body:String,val sourceTimestamp:Long,val receivedAt:Long)
     private data class StandardSms(val sender:String,val body:String,val receivedAt:Long,val simSlot:Int?,val sourceFingerprint:String)
-    companion object{private const val MAX_AGE=24*60*60*1000L;private const val DEBOUNCE_MILLIS=2_500L}
+    companion object{private const val MAX_AGE=24*60*60*1000L;private const val DEBOUNCE_MILLIS=2_500L;private const val NOTIFICATION_WAKE_TIMEOUT_MS=10_000L}
 }
