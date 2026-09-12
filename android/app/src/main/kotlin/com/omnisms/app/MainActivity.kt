@@ -20,6 +20,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -35,6 +36,11 @@ class MainActivity:Activity(){
     private lateinit var deviceId:EditText
     private lateinit var secret:EditText
     private lateinit var enabled:Switch
+    private lateinit var pageContainer:FrameLayout
+    private lateinit var homePageView:View
+    private lateinit var settingsPageView:View
+    private lateinit var homeTab:TextView
+    private lateinit var settingsTab:TextView
 
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState)
@@ -55,11 +61,50 @@ class MainActivity:Activity(){
         }
     }
 
-    private fun buildUi():ScrollView{
-        val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(16),dp(18),dp(36));setBackgroundColor(BACKGROUND)}
-        content.addView(heroCard(),fullParams(bottom=18))
-        content.addView(statusCard(),fullParams(bottom=22))
+    private fun buildUi():View{
+        val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BACKGROUND)}
+        pageContainer=FrameLayout(this)
+        root.addView(pageContainer,LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f))
+        val home=homePage()
+        val settings=settingsPage()
+        root.addView(bottomNavigation(),LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(76)))
+        homePageView=home
+        settingsPageView=settings
+        showPage(false)
+        return root
+    }
 
+    private fun homePage():ScrollView{
+        val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(16),dp(18),dp(28));setBackgroundColor(BACKGROUND)}
+        content.addView(heroCard(),fullParams(bottom=18))
+        content.addView(statusCard(),fullParams(bottom=24))
+        content.addView(sectionTitle("运行控制","日常使用只需要关注这里"))
+        val controls=card()
+        val switchRow=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;orientation=LinearLayout.HORIZONTAL;setPadding(0,0,0,dp(16))}
+        val switchText=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+        switchText.addView(TextView(this).apply{text="开启短信转发";textSize=17f;setTextColor(INK);typeface=Typeface.DEFAULT_BOLD})
+        switchText.addView(TextView(this).apply{text="保持后台服务运行，不在通知中显示短信内容";textSize=13f;setTextColor(MUTED);setPadding(0,dp(4),0,0)})
+        enabled=Switch(this).apply{
+            isChecked=SecureStorage.isEnabled(this@MainActivity)
+            thumbTintList=ColorStateList.valueOf(PRIMARY)
+            trackTintList=ColorStateList.valueOf(Color.rgb(190,222,249))
+            setOnCheckedChangeListener{_,checked->toggle(checked)}
+        }
+        switchRow.addView(switchText,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
+        switchRow.addView(enabled)
+        controls.addView(switchRow)
+        controls.addView(primaryButton("发送虚构测试短信"){sendTest()})
+        content.addView(controls,fullParams(bottom=18))
+        val guide=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(BLUE_TINT,18,BLUE_BORDER);setPadding(dp(18),dp(16),dp(18),dp(16))}
+        guide.addView(TextView(this).apply{text="日常无需保持页面打开";textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(BLUE_DARK)})
+        guide.addView(TextView(this).apply{text="开启转发后，可以返回桌面或锁屏。连接和权限选项都已收纳到“设置”页。";textSize=14f;setTextColor(BLUE_TEXT);setLineSpacing(dp(3).toFloat(),1f);setPadding(0,dp(6),0,0)})
+        content.addView(guide)
+        return ScrollView(this).apply{isFillViewport=true;addView(content)}
+    }
+
+    private fun settingsPage():ScrollView{
+        val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(20),dp(18),dp(28));setBackgroundColor(BACKGROUND)}
+        content.addView(pageHeader("设置","管理安全连接、系统权限与隐私"),fullParams(bottom=24))
         content.addView(sectionTitle("安全连接","仅首次设置或重新配对时需要"))
         val connection=card()
         connection.addView(fieldLabel("服务器地址"))
@@ -73,34 +118,51 @@ class MainActivity:Activity(){
         connection.addView(secret,fullParams(bottom=16))
         connection.addView(primaryButton("保存安全连接"){saveConnection()})
         content.addView(connection,fullParams(bottom=24))
-
-        content.addView(sectionTitle("运行控制","让短信在锁屏时也能可靠送达"))
-        val controls=card()
-        val switchRow=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;orientation=LinearLayout.HORIZONTAL;setPadding(0,0,0,dp(16))}
-        val switchText=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-        switchText.addView(TextView(this).apply{text="开启短信转发";textSize=17f;setTextColor(INK);typeface=Typeface.DEFAULT_BOLD})
-        switchText.addView(TextView(this).apply{text="保持前台服务运行，不在通知中显示短信内容";textSize=13f;setTextColor(MUTED);setPadding(0,dp(4),0,0)})
-        enabled=Switch(this).apply{
-            isChecked=SecureStorage.isEnabled(this@MainActivity)
-            thumbTintList=ColorStateList.valueOf(PRIMARY)
-            trackTintList=ColorStateList.valueOf(Color.rgb(190,222,249))
-            setOnCheckedChangeListener{_,checked->toggle(checked)}
-        }
-        switchRow.addView(switchText,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
-        switchRow.addView(enabled)
-        controls.addView(switchRow)
-        controls.addView(primaryButton("发送虚构测试短信"){sendTest()})
-        controls.addView(secondaryButton("授权5G消息通知读取"){startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))},fullParams(top=10))
-        controls.addView(secondaryButton("允许锁屏后台运行"){requestBatteryExemption()},fullParams(top=10))
-        controls.addView(secondaryButton("检查短信权限与后台设置"){startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))},fullParams(top=10))
-        content.addView(controls,fullParams(bottom=24))
-
+        content.addView(sectionTitle("权限与后台","遇到锁屏延迟时可在这里检查"))
+        val permissions=card()
+        permissions.addView(secondaryButton("授权5G消息通知读取"){startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))})
+        permissions.addView(secondaryButton("允许锁屏后台运行"){requestBatteryExemption()},fullParams(top=10))
+        permissions.addView(secondaryButton("检查短信权限与后台设置"){startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))},fullParams(top=10))
+        content.addView(permissions,fullParams(bottom=20))
         val privacy=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(BLUE_TINT,18,BLUE_BORDER);setPadding(dp(18),dp(17),dp(18),dp(17))}
         privacy.addView(TextView(this).apply{text="隐私保护";textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(BLUE_DARK)})
         privacy.addView(TextView(this).apply{text="普通短信通过系统短信接口处理；5G消息只读取 OPPO 系统短信 App 的通知。其他应用通知会被立即忽略，内容只进入加密队列和你的 Gmail。";textSize=14f;setTextColor(BLUE_TEXT);setLineSpacing(dp(3).toFloat(),1f);setPadding(0,dp(6),0,0)})
-        content.addView(privacy,fullParams())
+        content.addView(privacy)
         content.addView(TextView(this).apply{text="OmniSMS  ·  个人自用安全转发";gravity=Gravity.CENTER;textSize=12f;setTextColor(MUTED);setPadding(0,dp(24),0,0)},fullParams())
         return ScrollView(this).apply{isFillViewport=true;addView(content)}
+    }
+
+    private fun pageHeader(title:String,subtitle:String)=LinearLayout(this).apply{
+        orientation=LinearLayout.VERTICAL
+        addView(TextView(this@MainActivity).apply{text=title;textSize=30f;typeface=Typeface.DEFAULT_BOLD;setTextColor(INK)})
+        addView(TextView(this@MainActivity).apply{text=subtitle;textSize=15f;setTextColor(MUTED);setPadding(0,dp(5),0,0)})
+    }
+
+    private fun bottomNavigation():LinearLayout=LinearLayout(this).apply{
+        orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER;background=rounded(Color.WHITE,0,BLUE_BORDER);setPadding(dp(18),dp(10),dp(18),dp(10));elevation=dp(8).toFloat()
+        homeTab=navItem("首页"){showPage(false)}
+        settingsTab=navItem("设置"){showPage(true)}
+        addView(homeTab,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.MATCH_PARENT,1f).apply{rightMargin=dp(6)})
+        addView(settingsTab,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.MATCH_PARENT,1f).apply{leftMargin=dp(6)})
+    }
+
+    private fun navItem(label:String,action:()->Unit)=TextView(this).apply{
+        text=label;gravity=Gravity.CENTER;textSize=15f;typeface=Typeface.DEFAULT_BOLD;setOnClickListener{action()}
+    }
+
+    private fun showPage(settings:Boolean){
+        val target=if(settings)settingsPageView else homePageView
+        (target.parent as? ViewGroup)?.removeView(target)
+        pageContainer.removeAllViews()
+        pageContainer.addView(target,FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT))
+        styleTab(homeTab,!settings)
+        styleTab(settingsTab,settings)
+        if(::statusTitle.isInitialized)refresh()
+    }
+
+    private fun styleTab(tab:TextView,selected:Boolean){
+        tab.setTextColor(if(selected)BLUE_DARK else MUTED)
+        tab.background=rounded(if(selected)BLUE_TINT else Color.TRANSPARENT,16)
     }
 
     private fun heroCard():LinearLayout=LinearLayout(this).apply{
