@@ -39,8 +39,10 @@ class MainActivity:Activity(){
     private lateinit var pageContainer:FrameLayout
     private lateinit var homePageView:View
     private lateinit var settingsPageView:View
+    private lateinit var aboutPageView:View
     private lateinit var homeTab:TextView
     private lateinit var settingsTab:TextView
+    private lateinit var aboutTab:TextView
 
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState)
@@ -67,10 +69,12 @@ class MainActivity:Activity(){
         root.addView(pageContainer,LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f))
         val home=homePage()
         val settings=settingsPage()
+        val about=aboutPage()
         root.addView(bottomNavigation(),LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(76)))
         homePageView=home
         settingsPageView=settings
-        showPage(false)
+        aboutPageView=about
+        showPage(PAGE_HOME)
         return root
     }
 
@@ -124,13 +128,56 @@ class MainActivity:Activity(){
         permissions.addView(secondaryButton("允许锁屏后台运行"){requestBatteryExemption()},fullParams(top=10))
         permissions.addView(secondaryButton("检查短信权限与后台设置"){startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))},fullParams(top=10))
         content.addView(permissions,fullParams(bottom=20))
-        val privacy=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(BLUE_TINT,18,BLUE_BORDER);setPadding(dp(18),dp(17),dp(18),dp(17))}
-        privacy.addView(TextView(this).apply{text="隐私保护";textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(BLUE_DARK)})
-        privacy.addView(TextView(this).apply{text="普通短信通过系统短信接口处理；5G消息只读取 OPPO 系统短信 App 的通知。其他应用通知会被立即忽略，内容只进入加密队列和你的 Gmail。";textSize=14f;setTextColor(BLUE_TEXT);setLineSpacing(dp(3).toFloat(),1f);setPadding(0,dp(6),0,0)})
-        content.addView(privacy)
-        content.addView(TextView(this).apply{text="OmniSMS  ·  个人自用安全转发";gravity=Gravity.CENTER;textSize=12f;setTextColor(MUTED);setPadding(0,dp(24),0,0)},fullParams())
         return ScrollView(this).apply{isFillViewport=true;addView(content)}
     }
+
+    private fun aboutPage():ScrollView{
+        val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(20),dp(18),dp(28));setBackgroundColor(BACKGROUND)}
+        content.addView(pageHeader("关于 OmniSMS","一款为个人设计的短信转发助手"),fullParams(bottom=20))
+        val intro=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;background=gradient(intArrayOf(Color.rgb(196,227,253),Color.rgb(239,249,255)),24);setPadding(dp(22),dp(24),dp(22),dp(24))}
+        intro.addView(TextView(this).apply{text="O";gravity=Gravity.CENTER;textSize=24f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE);background=rounded(PRIMARY,18)},LinearLayout.LayoutParams(dp(58),dp(58)))
+        intro.addView(TextView(this).apply{text="OmniSMS";textSize=24f;typeface=Typeface.DEFAULT_BOLD;setTextColor(INK);gravity=Gravity.CENTER;setPadding(0,dp(12),0,0)})
+        intro.addView(TextView(this).apply{text="让另一台设备也能及时收到你的重要短信";textSize=14f;setTextColor(BLUE_TEXT);gravity=Gravity.CENTER;setPadding(0,dp(5),0,0)})
+        intro.addView(TextView(this).apply{text="版本 "+BuildConfig.VERSION_NAME;textSize=12f;setTextColor(MUTED);gravity=Gravity.CENTER;setPadding(0,dp(10),0,0)})
+        content.addView(intro,fullParams(bottom=24))
+        content.addView(sectionTitle("它能做什么","简单、可靠，只服务于你的个人设备"))
+        val features=card()
+        features.addView(featureRow("双卡短信监听","自动接收手机中的普通短信和验证码"))
+        features.addView(divider())
+        features.addView(featureRow("安全转发","通过你的私人服务器送达指定 Gmail"))
+        features.addView(divider())
+        features.addView(featureRow("断网自动补发","网络恢复后继续处理安全队列中的消息"))
+        content.addView(features,fullParams(bottom=24))
+        content.addView(sectionTitle("消息如何抵达","三个步骤完成一次转发"))
+        val flow=card()
+        flow.addView(flowRow("1","手机收到短信","系统将新短信交给 OmniSMS"))
+        flow.addView(flowRow("2","加密上传","消息发送到你的私人服务器"))
+        flow.addView(flowRow("3","邮件提醒","服务器将完整内容投递到 Gmail"))
+        content.addView(flow,fullParams(bottom=20))
+        val privacy=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(BLUE_TINT,18,BLUE_BORDER);setPadding(dp(18),dp(17),dp(18),dp(17))}
+        privacy.addView(TextView(this).apply{text="为隐私而设计";textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(BLUE_DARK)})
+        privacy.addView(TextView(this).apply{text="OmniSMS 不提供公共账号或共享平台。短信仅在你的手机、私人服务器和接收邮箱之间流转，通知与诊断日志不会显示短信正文或验证码。";textSize=14f;setTextColor(BLUE_TEXT);setLineSpacing(dp(3).toFloat(),1f);setPadding(0,dp(6),0,0)})
+        content.addView(privacy)
+        content.addView(TextView(this).apply{text="个人自用 · 请妥善保护短信和验证码";gravity=Gravity.CENTER;textSize=12f;setTextColor(MUTED);setPadding(0,dp(24),0,0)},fullParams())
+        return ScrollView(this).apply{isFillViewport=true;addView(content)}
+    }
+
+    private fun featureRow(title:String,detail:String)=LinearLayout(this).apply{
+        orientation=LinearLayout.VERTICAL;setPadding(dp(2),dp(10),dp(2),dp(10))
+        addView(TextView(this@MainActivity).apply{text=title;textSize=16f;typeface=Typeface.DEFAULT_BOLD;setTextColor(INK)})
+        addView(TextView(this@MainActivity).apply{text=detail;textSize=13f;setTextColor(MUTED);setPadding(0,dp(4),0,0)})
+    }
+
+    private fun flowRow(number:String,title:String,detail:String)=LinearLayout(this).apply{
+        orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(2),dp(9),dp(2),dp(9))
+        addView(TextView(this@MainActivity).apply{text=number;gravity=Gravity.CENTER;textSize=14f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE);background=rounded(PRIMARY,12)},LinearLayout.LayoutParams(dp(36),dp(36)))
+        val textGroup=LinearLayout(this@MainActivity).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(12),0,0,0)}
+        textGroup.addView(TextView(this@MainActivity).apply{text=title;textSize=15f;typeface=Typeface.DEFAULT_BOLD;setTextColor(INK)})
+        textGroup.addView(TextView(this@MainActivity).apply{text=detail;textSize=13f;setTextColor(MUTED);setPadding(0,dp(3),0,0)})
+        addView(textGroup,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
+    }
+
+    private fun divider()=View(this).apply{setBackgroundColor(Color.rgb(231,238,245))}.also{it.layoutParams=LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(1))}
 
     private fun pageHeader(title:String,subtitle:String)=LinearLayout(this).apply{
         orientation=LinearLayout.VERTICAL
@@ -139,24 +186,27 @@ class MainActivity:Activity(){
     }
 
     private fun bottomNavigation():LinearLayout=LinearLayout(this).apply{
-        orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER;background=rounded(Color.WHITE,0,BLUE_BORDER);setPadding(dp(18),dp(10),dp(18),dp(10));elevation=dp(8).toFloat()
-        homeTab=navItem("首页"){showPage(false)}
-        settingsTab=navItem("设置"){showPage(true)}
-        addView(homeTab,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.MATCH_PARENT,1f).apply{rightMargin=dp(6)})
-        addView(settingsTab,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.MATCH_PARENT,1f).apply{leftMargin=dp(6)})
+        orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER;background=rounded(Color.WHITE,0,BLUE_BORDER);setPadding(dp(12),dp(10),dp(12),dp(10));elevation=dp(8).toFloat()
+        homeTab=navItem("首页"){showPage(PAGE_HOME)}
+        settingsTab=navItem("设置"){showPage(PAGE_SETTINGS)}
+        aboutTab=navItem("关于"){showPage(PAGE_ABOUT)}
+        addView(homeTab,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.MATCH_PARENT,1f).apply{rightMargin=dp(4)})
+        addView(settingsTab,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.MATCH_PARENT,1f).apply{leftMargin=dp(4);rightMargin=dp(4)})
+        addView(aboutTab,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.MATCH_PARENT,1f).apply{leftMargin=dp(4)})
     }
 
     private fun navItem(label:String,action:()->Unit)=TextView(this).apply{
         text=label;gravity=Gravity.CENTER;textSize=15f;typeface=Typeface.DEFAULT_BOLD;setOnClickListener{action()}
     }
 
-    private fun showPage(settings:Boolean){
-        val target=if(settings)settingsPageView else homePageView
+    private fun showPage(page:Int){
+        val target=when(page){PAGE_SETTINGS->settingsPageView;PAGE_ABOUT->aboutPageView;else->homePageView}
         (target.parent as? ViewGroup)?.removeView(target)
         pageContainer.removeAllViews()
         pageContainer.addView(target,FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT))
-        styleTab(homeTab,!settings)
-        styleTab(settingsTab,settings)
+        styleTab(homeTab,page==PAGE_HOME)
+        styleTab(settingsTab,page==PAGE_SETTINGS)
+        styleTab(aboutTab,page==PAGE_ABOUT)
         if(::statusTitle.isInitialized)refresh()
     }
 
@@ -236,6 +286,9 @@ class MainActivity:Activity(){
 
     companion object{
         private const val SMS_PERMISSION_REQUEST=1201
+        private const val PAGE_HOME=0
+        private const val PAGE_SETTINGS=1
+        private const val PAGE_ABOUT=2
         private val BACKGROUND=Color.rgb(244,249,253)
         private val PRIMARY=Color.rgb(40,120,185)
         private val BLUE_DARK=Color.rgb(35,105,164)
