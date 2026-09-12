@@ -21,6 +21,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -135,7 +136,7 @@ class MainActivity:Activity(){
         val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(20),dp(18),dp(28));setBackgroundColor(BACKGROUND)}
         content.addView(pageHeader("关于 OmniSMS","一款为个人设计的短信转发助手"),fullParams(bottom=20))
         val intro=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;background=gradient(intArrayOf(Color.rgb(196,227,253),Color.rgb(239,249,255)),24);setPadding(dp(22),dp(24),dp(22),dp(24))}
-        intro.addView(TextView(this).apply{text="O";gravity=Gravity.CENTER;textSize=24f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE);background=rounded(PRIMARY,18)},LinearLayout.LayoutParams(dp(58),dp(58)))
+        intro.addView(brandMark(72),LinearLayout.LayoutParams(dp(72),dp(72)))
         intro.addView(TextView(this).apply{text="OmniSMS";textSize=24f;typeface=Typeface.DEFAULT_BOLD;setTextColor(INK);gravity=Gravity.CENTER;setPadding(0,dp(12),0,0)})
         intro.addView(TextView(this).apply{text="让另一台设备也能及时收到你的重要短信";textSize=14f;setTextColor(BLUE_TEXT);gravity=Gravity.CENTER;setPadding(0,dp(5),0,0)})
         intro.addView(TextView(this).apply{text="版本 "+BuildConfig.VERSION_NAME;textSize=12f;setTextColor(MUTED);gravity=Gravity.CENTER;setPadding(0,dp(10),0,0)})
@@ -215,10 +216,17 @@ class MainActivity:Activity(){
         tab.background=rounded(if(selected)BLUE_TINT else Color.TRANSPARENT,16)
     }
 
+    private fun brandMark(size:Int)=ImageView(this).apply{
+        setImageResource(R.drawable.ic_brand_mark)
+        contentDescription="OmniSMS 标志"
+        scaleType=ImageView.ScaleType.FIT_CENTER
+        minimumWidth=dp(size);minimumHeight=dp(size)
+    }
+
     private fun heroCard():LinearLayout=LinearLayout(this).apply{
         orientation=LinearLayout.VERTICAL;background=gradient(intArrayOf(Color.rgb(196,227,253),Color.rgb(235,247,255)),26);setPadding(dp(22),dp(21),dp(22),dp(22));elevation=dp(2).toFloat()
         val brandRow=LinearLayout(this@MainActivity).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        brandRow.addView(TextView(this@MainActivity).apply{text="O";gravity=Gravity.CENTER;textSize=16f;typeface=Typeface.DEFAULT_BOLD;setTextColor(Color.WHITE);background=rounded(PRIMARY,12)},LinearLayout.LayoutParams(dp(38),dp(38)))
+        brandRow.addView(brandMark(42),LinearLayout.LayoutParams(dp(42),dp(42)))
         brandRow.addView(TextView(this@MainActivity).apply{text="OMNISMS";textSize=13f;letterSpacing=.14f;typeface=Typeface.DEFAULT_BOLD;setTextColor(BLUE_DARK);setPadding(dp(11),0,0,0)})
         addView(brandRow)
         addView(TextView(this@MainActivity).apply{text="你的短信，安心抵达";textSize=28f;typeface=Typeface.DEFAULT_BOLD;setTextColor(INK);setPadding(0,dp(18),0,0)})
