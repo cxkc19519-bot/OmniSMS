@@ -32,7 +32,7 @@ class SmsForegroundService:Service(){
     private var inboxObserverRegistered=false
     override fun onCreate(){super.onCreate();ensureLiveSmsReceiverRegistered();ensureInboxObserverRegistered();val manager=getSystemService(NotificationManager::class.java);manager.createNotificationChannel(NotificationChannel(CHANNEL,"短信转发运行状态",NotificationManager.IMPORTANCE_LOW).apply{description="保持短信监听可靠运行；不会显示短信内容"})
         val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val notification=Notification.Builder(this,CHANNEL).setSmallIcon(com.omnisms.app.R.drawable.ic_launcher).setContentTitle("OmniSMS 正在运行").setContentText("新短信将安全转发，通知中不会显示短信内容").setContentIntent(open).setOngoing(true).build();startForeground(ID,notification)}
+        val notification=Notification.Builder(this,CHANNEL).setSmallIcon(com.omnisms.app.R.drawable.ic_launcher).setContentTitle("OmniSMS 正在运行").setContentText("后台服务运行中，新短信将安全转发").setCategory(Notification.CATEGORY_SERVICE).setContentIntent(open).setOngoing(true).build();startForeground(ID,notification)}
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
         ensureLiveSmsReceiverRegistered();ensureInboxObserverRegistered();scheduleDrain()
         if(intent?.action==ACTION_SMS_RECOVERY)scheduleDelayedRecovery()

@@ -125,9 +125,13 @@ class MainActivity:Activity(){
         content.addView(connection,fullParams(bottom=24))
         content.addView(sectionTitle("权限与后台","遇到锁屏延迟时可在这里检查"))
         val permissions=card()
+        permissions.addView(TextView(this).apply{
+            text="ColorOS 必须同时开启：允许完全后台行为、允许应用自启动、允许应用关联启动。缺少任一项都可能导致短信到亮屏后才转发。"
+            textSize=14f;setTextColor(BLUE_TEXT);setLineSpacing(dp(3).toFloat(),1f);setPadding(dp(2),0,dp(2),dp(12))
+        })
         permissions.addView(secondaryButton("授权5G消息通知读取"){startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))})
         permissions.addView(secondaryButton("允许锁屏后台运行"){requestBatteryExemption()},fullParams(top=10))
-        permissions.addView(secondaryButton("检查短信权限与后台设置"){startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))},fullParams(top=10))
+        permissions.addView(secondaryButton("打开 ColorOS 后台保护设置"){startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:$packageName")))},fullParams(top=10))
         content.addView(permissions,fullParams(bottom=20))
         return ScrollView(this).apply{isFillViewport=true;addView(content)}
     }

@@ -17,8 +17,8 @@ android {
         applicationId = "com.omnisms.app"
         minSdk = 31
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.4.2"
+        versionCode = 18
+        versionName = "0.4.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

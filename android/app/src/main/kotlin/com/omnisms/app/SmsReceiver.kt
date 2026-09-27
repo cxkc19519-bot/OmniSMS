@@ -6,10 +6,16 @@ import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.provider.Telephony
+import android.os.PowerManager
 import android.util.Log
 
 class SmsReceiver:BroadcastReceiver(){
     override fun onReceive(context:Context,intent:Intent){if(intent.action!=Telephony.Sms.Intents.SMS_RECEIVED_ACTION||!SecureStorage.isEnabled(context))return
+        // Keep the CPU awake across the receiver -> foreground-service handoff.
+        // The timeout releases this automatically even if ColorOS kills the process.
+        context.getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"OmniSMS:sms-received")
+            .apply{setReferenceCounted(false);acquire(SMS_WAKE_TIMEOUT_MS)}
         val parts=Telephony.Sms.Intents.getMessagesFromIntent(intent)
         if(parts.isEmpty()){
             // ColorOS can rebroadcast an SMS before its inbox provider is readable.
@@ -25,5 +31,7 @@ class SmsReceiver:BroadcastReceiver(){
     }
     @Suppress("DEPRECATION") private fun simSlot(intent:Intent):Int?{for(key in listOf("phone","slot","slot_id","simId")){val value=intent.extras?.get(key);if(value is Number&&value.toInt()>=0)return value.toInt()};return null}
     private fun isOnline(context:Context):Boolean{val cm=context.getSystemService(ConnectivityManager::class.java);val network=cm.activeNetwork?:return false;val caps=cm.getNetworkCapabilities(network)?:return false;return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)}
+
+    companion object{private const val SMS_WAKE_TIMEOUT_MS=15_000L}
 
 }
