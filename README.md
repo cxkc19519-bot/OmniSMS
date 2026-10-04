@@ -1,130 +1,511 @@
-# OmniSMS
+<div align="center">
 
-OmniSMS 是一套面向个人自用场景的 Android 短信转发系统。Android 手机收到普通 SMS 或 ColorOS 系统短信 App 中的 5G消息后，OmniSMS 将消息可靠写入本地加密队列，通过 HTTPS 上传到个人 VPS，再由 VPS 使用 Gmail SMTP 投递到指定邮箱，使其他设备可以通过 Gmail 及时查看。
+# 📨 OmniSMS
 
-本项目强调可靠性、隐私和可恢复性：短信必须先落盘再发送；断网后自动补发；客户端、服务端和 Gmail 投递均提供去重保护；真实邮箱、服务器地址、设备密钥、Gmail 应用专用密码和短信正文不得进入仓库或普通日志。
+**把 Android 手机上的重要短信，安全、可靠地转发到你的 Gmail。**
 
-> 本项目仅用于用户本人管理自己手机上的短信。它不是多人短信平台，不提供远程发短信、短信回复、网页收件箱或其他应用通知采集。
+[![Android 12+](https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white)](#运行环境) [![Android 0.4.4](https://img.shields.io/badge/Android-0.4.4-2878B9)](#当前状态) [![Server 0.3.3](https://img.shields.io/badge/Server-0.3.3-00ADD8?logo=go&logoColor=white)](#当前状态) [![Go 1.24](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)](#开发与构建) [![Personal Use](https://img.shields.io/badge/用途-个人自用-f0a030)](#使用边界)
+
+普通 SMS · 双卡 · ColorOS 5G消息 · 断网补发 · 锁屏运行 · Gmail 通知
+
+</div>
+
+---
+
+OmniSMS 是一套面向个人自用场景的短信转发系统。Android 手机收到短信后，App 会先将消息安全写入本地加密队列，再通过 HTTPS 上传到你的私人 VPS，最后由 VPS 使用 Gmail SMTP 投递到指定邮箱。
+
+它适合这样的场景：Android 手机留在家中或其他地点，你希望在 iPhone、电脑或平板上及时获取验证码和其他重要短信。
+
+> [!IMPORTANT]
+> 本项目只用于用户本人管理自己手机上的短信。它不是公共短信平台，不支持远程发送短信、短信回复、多人账号、公开注册或任意应用通知采集。
+
+## 目录
+
+- [项目亮点](#项目亮点)
+- [当前状态](#当前状态)
+- [系统架构](#系统架构)
+- [运行环境](#运行环境)
+- [开始使用](#开始使用)
+- [ColorOS 后台设置](#coloros-后台设置)
+- [VPS 部署概要](#vps-部署概要)
+- [Android 配置与发布](#android-配置与发布)
+- [安全与隐私](#安全与隐私)
+- [可靠性设计](#可靠性设计)
+- [开发与构建](#开发与构建)
+- [测试与验收](#测试与验收)
+- [常见问题](#常见问题)
+- [项目结构](#项目结构)
+- [项目文档](#项目文档)
+
+## 项目亮点
+
+| 能力 | 说明 |
+|---|---|
+| 双卡短信监听 | 监听两张 SIM 卡的新短信，不按发送方过滤；尽力保留卡槽信息。 |
+| 完整短信转发 | 普通 SMS 会转发完整正文、发送方、SIM、接收时间和实际转发时间。 |
+| ColorOS 5G消息 | 可选使用通知读取权限，兼容未进入标准 SMS 数据库的 5G消息。 |
+| 锁屏可靠运行 | 前台服务、动态接收器、短时唤醒锁和收件箱补查共同降低锁屏漏转发概率。 |
+| 断网自动补发 | 网络中断或 VPS 暂时不可用时先进入本地加密队列，恢复后自动重试。 |
+| 防止重复邮件 | Android 消息指纹、请求幂等键和服务端唯一约束提供多层去重。 |
+| 私人部署 | App、VPS 和 Gmail 都由用户本人控制，不依赖公共短信中转平台。 |
+| 低资源占用 | 服务端为 Go 单进程程序，使用 SQLite，适合小型 VPS。 |
 
 ## 当前状态
 
-| 组件 | 当前版本/状态 | 说明 |
+| 组件 | 版本或状态 | 验证结果 |
 |---|---|---|
-| Android 正式基线 | `0.3.4` | 已完成正式签名、安装、配对、断网补发和重启恢复验证。 |
-| Android 候选版 | `0.4.4` / `versionCode 18` | 已完成构建、单元测试、Lint、正式签名覆盖安装和锁屏普通 SMS 实投；ColorOS 完整后台放行后，完整短信在锁屏状态下16秒内进入 Gmail。 |
-| VPS 服务端 | `0.3.3` | 已部署运行，健康检查、Gmail 投递、重试和同版本回滚演练通过。 |
-| HTTPS 与邮件 | 已运行 | 公网 HTTPS、Gmail SMTP、独立收件邮箱和 iPhone Gmail 通知均已验证。 |
-| 发布结论 | 候选验收中 | 尚未宣布最终生产验收完成，剩余项目见 `docs/11-release-acceptance-0.3.4.md`。 |
+| Android 正式基线 | `0.3.4` | 已完成正式签名、配对、断网补发与重启恢复验证。 |
+| Android 候选版 | `0.4.4` / `versionCode 18` | 已完成单元测试、Lint、正式签名覆盖安装和锁屏普通 SMS 实投。 |
+| VPS 服务端 | `0.3.3` | 已部署；健康检查、Gmail 投递、失败重试和同版本回滚演练通过。 |
+| HTTPS | 已运行 | 公网证书、反向代理与健康接口验证通过。 |
+| Gmail | 已运行 | 独立发件 Gmail、接收 Gmail 和 iPhone 通知均已验证。 |
+| 发布结论 | 候选验收中 | 主链路可用，但剩余发布门槛尚未全部关闭。 |
 
-`0.3.6` 针对 ColorOS 锁屏普通 SMS 偶发漏转发，采用“先持久化、再上传、延迟补查”的保护：
+### 最近一次锁屏验证
 
-- 广播回调返回前先把完整短信写入本地加密队列，网络上传仍在后台执行。
-- PDU 暂时无法解析或入队失败时，前台服务在 5 秒后再次增量扫描系统收件箱。
-- WorkManager 每次重试上传前也先执行收件箱补查，避免前台服务启动受限时永久遗漏。
-- 前台服务继续使用动态接收器、收件箱观察器和密集扫描合并；持久指纹避免多路径重复邮件。
-- 首页检测电池优化豁免状态，并提供系统授权入口。
+在 OPPO A72 5G、Android 12、ColorOS 12.1 上：
 
-2026-08-24 真机复现确认 ColorOS 已向 OmniSMS 投递普通 SMS，但旧版没有形成邮件。覆盖安装 0.3.6 后，应用在未清除配对和权限的情况下自动从系统收件箱追回该短信，Gmail 收到一封新邮件。普通 SMS 锁屏“无需重启实时转发”仍需用下一条新短信独立复测。
+- 手机全过程保持锁屏和休眠状态；
+- 普通 SMS 完整正文成功转发；
+- 短信接收至 Gmail 收件约 16 秒；
+- 邮件标记为“实时转发”，SIM 2 和两个时间字段正确；
+- 0.4.4 不再常驻持有 CPU 唤醒锁，只在接收和上传期间短暂持有。
 
-随后复现另一条跨通道竞态：ColorOS 只更新5G消息通知，通知正文又已存在系统短信表，旧逻辑直接忽略却没有确保普通通道已经入队。0.3.7 改为直接使用匹配的系统短信记录入队，并沿用标准短信指纹去重；覆盖安装后自动追回当前通知并只生成一封邮件。
+详细证据与未完成项见 [`docs/10-development-status.md`](docs/10-development-status.md)。
 
-后续时间线又确认一条消息在 16:20:35 到达并于 16:20:37 发布通知，但 2.5 秒正文合并定时器在深度休眠中冻结，直到 16:23:47 解锁后才继续。0.3.8 在合并窗口持有最长10秒的部分唤醒锁，处理完成通常约2.5秒即释放，屏幕不会被点亮。
-
-2026-09-27 的再次复现确认：Android 标准电池白名单不能代替 ColorOS 厂商设置。目标 OPPO 必须同时开启“允许完全后台行为”“允许应用自启动”“允许应用关联启动”和“允许唤醒前台”。0.4.4 在设置页明确列出这些开关，并只在短信接收、通知合并和上传期间短时持有 CPU 唤醒锁，不通过常驻唤醒锁换取可靠性。真机保持锁屏时，普通 SMS 完整正文于16秒内进入 Gmail。
-
-## 系统如何工作
+## 系统架构
 
 ```text
-普通 SMS 系统广播 ───────────────────────┐
-前台服务动态短信接收器 ──────────────────┤
-系统短信收件箱增量补查 ──────────────────┤
-ColorOS 5G消息通知（仅 com.android.mms）─┘
-                                          │
-                                          ▼
-                                本地指纹去重与加密队列
-                                          │
-                              HTTPS + HMAC 请求签名
-                                          │
-                                          ▼
-                                  VPS 接收 API
-                                          │
-                              幂等校验、SQLite 短期队列
-                                          │
-                                          ▼
-                                    Gmail SMTP
-                                          │
-                                          ▼
-                                Gmail 收件箱 / iPhone 通知
+┌──────────────────────── Android 手机 ────────────────────────┐
+│                                                              │
+│  普通 SMS 广播 ───────────────┐                              │
+│  前台服务动态接收器 ───────────┤                              │
+│  系统收件箱增量补查 ───────────┼─→ 去重 → 本地加密队列        │
+│  ColorOS 5G消息通知 ──────────┘                              │
+│                                      │                       │
+└──────────────────────────────────────┼───────────────────────┘
+                                       │ HTTPS + HMAC-SHA256
+                                       ▼
+┌────────────────────────── 私人 VPS ───────────────────────────┐
+│  Nginx / HTTPS → OmniSMS API → 幂等校验 → SQLite 投递队列     │
+└──────────────────────────────────────┼───────────────────────┘
+                                       │ Gmail SMTP
+                                       ▼
+                         Gmail 收件箱 / iPhone 通知
 ```
 
 一次正常投递包含以下步骤：
 
-1. Android 接收新短信或系统短信 App 的 5G消息通知。
-2. App 合并多段短信，采集发送方、接收时间和可获得的 SIM 信息。
-3. 消息使用 Android Keystore 保护的密钥加密写入本地 SQLite 队列。
-4. 网络可用时立即上传；网络不可用时保留在本机并使用 WorkManager 退避重试。
-5. VPS 验证设备 ID、时间戳、随机数、请求签名和幂等键。
-6. 服务端短期保存待投递消息，通过 Gmail SMTP 发送邮件。
-7. 邮件成功后清除服务端短信正文；状态记录和失败数据最迟 24 小时清理。
+1. Android 接收普通 SMS 或系统短信 App 发布的 5G消息通知。
+2. App 合并多段短信，采集发送方、消息时间和可获得的 SIM 信息。
+3. 完整消息先加密写入本地 SQLite 队列，落盘成功后才开始上传。
+4. App 使用 HTTPS 和 HMAC 签名向 VPS 提交消息。
+5. VPS 校验设备、时间戳、随机数、签名和幂等键。
+6. 服务端通过 Gmail SMTP 发送响应式 HTML 邮件及纯文本版本。
+7. 投递成功后清除服务端短信正文；临时状态和失败正文最长保留 24 小时。
 
-## 主要功能
+## 运行环境
 
-### Android 客户端
+### 已验证设备
 
-- 监听两张 SIM 卡收到的新短信，不按发送方过滤。
-- 合并多段 SMS，尽量保留完整正文、发送方、接收时间和 SIM 卡槽。
-- 断网、本地网络异常或 VPS 暂时不可用时自动排队补发。
-- 手机重启后恢复监听和未完成队列。
-- 使用前台服务、短时唤醒锁、动态接收器和短信收件箱补查提高 ColorOS 锁屏可靠性。
-- 可选授权通知使用权，兼容不触发标准 SMS 广播的 ColorOS 5G消息。
-- 通知通道在读取任何标题或正文前严格校验包名，只允许 `com.android.mms`。
-- 首页提供转发总开关、虚构测试短信、5G消息授权和电池优化授权入口。
-- 前台状态通知不显示短信正文或验证码。
+| 角色 | 环境 |
+|---|---|
+| 短信来源手机 | OPPO A72 5G（PDYM20） |
+| Android 系统 | Android 12 / ColorOS 12.1 |
+| 接收设备 | iPhone 15 Pro Max，使用 Gmail App |
+| VPS | Ubuntu 24.04 LTS，Linux `amd64` |
+| VPS 规格 | 1 vCPU / 1 GB RAM / 20 GB 存储可正常运行 |
 
-### VPS 服务端
+### 软件要求
 
-- Go 单文件服务，适用于 1 vCPU、1 GB 内存的小型 VPS。
-- 默认仅监听 `127.0.0.1:8088`，由 Nginx 等反向代理提供 HTTPS。
-- 使用 HMAC-SHA256 验证设备请求，并限制时间偏差、防止请求重放。
-- 使用 `device_id + message_id` 唯一约束保证重复上传不会产生第二封邮件。
-- SQLite WAL 模式保存短期投递状态，不需要额外数据库服务。
-- 区分临时错误和永久错误；临时 SMTP/网络错误自动重试。
-- 提供存活和就绪健康检查。
-- 投递邮件使用独立的发送 Gmail 和接收邮箱。
+- Android 12（API 31）或更高版本；其他厂商系统尚未完成同等真机验证。
+- 一个可配置 HTTPS 的域名或子域名。
+- 一台可以运行 Linux `amd64` 程序的 VPS。
+- 一个用于 SMTP 发件的 Gmail，需开启两步验证并创建应用专用密码。
+- 一个接收邮件的邮箱；可以与发件邮箱不同。
 
-### 邮件内容
+## 开始使用
 
-邮件主题默认是：
+### 新手路线
+
+如果你只想把系统部署起来，按下面顺序进行：
+
+1. 准备 VPS、域名、发送 Gmail 和接收邮箱。
+2. 在本地构建服务端并部署到 VPS。
+3. 配置 Nginx 与有效 HTTPS 证书。
+4. 生成设备 ID 和设备密钥。
+5. 使用正式签名构建 Android APK。
+6. 安装 APK，填写服务器地址、设备 ID 和设备密钥。
+7. 授予短信权限并开启转发。
+8. 完成 [ColorOS 后台设置](#coloros-后台设置)。
+9. 使用 App 内置的虚构测试验证 HTTPS 与 Gmail。
+10. 依次验证锁屏短信、断网补发、重启恢复和 Gmail 通知。
+
+> [!CAUTION]
+> 不要把真实 Gmail 应用专用密码、设备密钥、服务器生产配置、短信正文或验证码提交到 GitHub，也不要粘贴到公开 Issue。
+
+### 配置关系
 
 ```text
-[短信转发] 来自 <发送方>
+Android App
+├─ 服务器地址：例如 https://sms.example.com
+├─ 设备编号：服务端配置中的设备 ID
+└─ 设备密钥：与服务端相同的随机密钥
+
+VPS
+├─ 设备 ID 与设备密钥
+├─ Gmail SMTP 应用专用密码
+├─ 发件邮箱
+├─ 收件邮箱
+└─ SQLite 数据文件
 ```
 
-邮件正文包含：
+## ColorOS 后台设置
 
-- 发送方。
-- SIM 卡或消息来源。
-- 短信接收时间。
-- 实际转发时间。
-- “实时转发”或“断网/失败后补发”标记。
-- 普通 SMS 的完整正文，或 5G消息通知实际提供的内容。
+这是 OPPO/ColorOS 上最重要的安装步骤。**仅关闭 Android 电池优化并不足够。**
 
-验证码不会放进邮件标题。Gmail 中的邮件不会由 OmniSMS 自动删除。
+进入：
 
-## 重要限制
+```text
+设置 → 应用管理 → OmniSMS → 耗电管理
+```
 
-- ColorOS 必须手动开启“允许完全后台行为”“允许应用自启动”“允许应用关联启动”和“允许唤醒前台”；仅关闭 Android 电池优化并不够。为获得最高可靠性，不建议从最近任务中强制划掉 OmniSMS。
-- 收件箱补查可以恢复前台服务空窗期间遗漏的普通 SMS，但恢复邮件会标记为补发，不保证仍是实时到达。
-- 5G消息并不一定进入 Android 标准短信数据库。OmniSMS 只能取得系统短信 App 通知实际提供的正文；通知被系统截断时，邮件也可能是精简内容。
-- 双卡标识依赖 Android 和运营商提供的信息，无法取得时会显示未知来源。
-- Gmail 通知速度及锁屏预览由 Gmail 和 iOS 设置决定，不属于 OmniSMS 可完全控制的范围。
-- 本项目只面向单个用户和单台来源手机，不提供多用户、团队权限或公开注册。
+确认以下四项全部开启：
 
-## 仓库结构
+- [x] 允许唤醒前台
+- [x] 允许完全后台行为
+- [x] 允许应用自启动
+- [x] 允许应用关联启动
+
+然后再确认：
+
+- OmniSMS 已获得“接收短信”和“读取短信”权限；
+- 系统通知栏中存在“OmniSMS 正在运行”的持续通知；
+- Android 电池优化已对 OmniSMS 豁免；
+- 如果需要兼容 5G消息，已授予通知使用权；
+- 不要主动“强行停止”应用；
+- 为获得最高可靠性，不建议从最近任务中上划清理 OmniSMS。
+
+如果缺少“允许完全后台行为”“自启动”或“关联启动”，ColorOS 可能把短信回调冻结到亮屏后才交给 App，表现为手机已收到短信，但 Gmail 数分钟后甚至解锁后才收到。
+
+## VPS 部署概要
+
+### 推荐目录
+
+```text
+/opt/omnisms/       程序文件
+/etc/omnisms/       生产配置与秘密
+/var/lib/omnisms/   SQLite 数据
+```
+
+### 服务组成
+
+| 组件 | 用途 |
+|---|---|
+| `omnisms-server` | 接收 Android 上传、维护投递队列并发送邮件。 |
+| systemd | 保证进程开机启动和异常恢复。 |
+| Nginx | 提供公网 HTTPS 入口并反向代理到本机服务。 |
+| SQLite | 保存短期队列和幂等状态。 |
+| Gmail SMTP | 将短信内容投递到目标邮箱。 |
+
+服务默认只应监听：
+
+```text
+127.0.0.1:8088
+```
+
+不要把内部 HTTP 服务直接暴露到公网。公网请求应先经过 Nginx 和有效 HTTPS 证书。
+
+### 配置
+
+配置模板位于 [`server/.env.example`](server/.env.example)。生产环境需要配置：
+
+- 本机监听地址；
+- SQLite 数据库路径；
+- 设备 ID 与设备密钥；
+- Gmail SMTP 地址、端口和应用专用密码；
+- 发件人与收件人地址；
+- 展示时区；
+- 24 小时数据保留期；
+- 认证允许的时间偏差与重试周期。
+
+生产配置建议保存到：
+
+```text
+/etc/omnisms/omnisms.env
+```
+
+文件权限必须限制为 `0600`。Gmail 必须使用应用专用密码，不得使用 Gmail 普通登录密码。
+
+### 健康接口
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| `GET` | `/health/live` | 检查服务进程是否存活。 |
+| `GET` | `/health/ready` | 检查数据库和服务是否已就绪。 |
+| `POST` | `/v1/messages` | 接收经过签名和幂等保护的短信消息。 |
+
+部署、升级、备份、回滚和 Nginx 示例见 [`docs/08-deployment-and-operations.md`](docs/08-deployment-and-operations.md)。
+
+## Android 配置与发布
+
+### 首次配置
+
+1. 安装使用正式私钥签名的 APK。
+2. 打开“设置”页，填写 HTTPS 服务地址、设备 ID 和设备密钥。
+3. 授予“接收短信”和“读取短信”权限。
+4. 开启短信转发总开关。
+5. 完成 [ColorOS 后台设置](#coloros-后台设置)。
+6. 如需转发 5G消息，单独授予通知使用权。
+7. 发送 App 内置的固定虚构测试消息。
+8. 确认 Gmail 只收到一封测试邮件，且没有真实短信内容。
+
+### 覆盖升级
+
+覆盖安装必须同时满足：
+
+- 使用与已安装版本相同的签名证书；
+- 新 APK 的 `versionCode` 高于旧版本；
+- 使用 `adb install -r` 或正常系统升级安装；
+- 升级后重新检查前台服务、短信权限和 ColorOS 后台设置。
+
+正常覆盖安装会保留配对信息和本地待发队列。卸载后重装会清除 App 数据，需要重新配对。
+
+### 正式签名
+
+首次创建签名密钥：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\android\create-release-keystore.ps1
+```
+
+生成后必须分别加密备份：
+
+1. `.release/omnisms-release.jks`；
+2. 签名密码；
+3. 恢复说明与证书指纹。
+
+签名密钥和密码不能保存在同一位置，也不得提交到 Git。签名密钥丢失后，无法继续以升级方式安装相同包名的新版本。
+
+## 安全与隐私
+
+### 数据保护
+
+- Android 使用 Android Keystore 保护本地敏感配置和短信队列。
+- App 只允许通过有效 HTTPS 连接 VPS，不提供忽略证书错误或回退 HTTP 的开关。
+- 每个请求包含时间戳、随机数、幂等键和 HMAC-SHA256 签名。
+- 服务端使用 `device_id + message_id` 唯一约束抵御重复提交。
+- 邮件成功发送后，服务端立即清除短信正文。
+- 未投递正文和状态记录最长保留 24 小时。
+- Gmail 中已经收到的邮件不会被 OmniSMS 自动删除。
+
+### 日志规则
+
+以下内容不得写入普通日志、崩溃报告或 Git：
+
+- 完整短信正文和验证码；
+- 发件或收件邮箱地址；
+- 手机号、服务器地址和设备密钥；
+- Gmail 应用专用密码；
+- Android 正式签名私钥及密码。
+
+日志只允许记录匿名消息标识、队列数量、状态和不含敏感数据的错误码。
+
+### 通知读取权限
+
+Android 的通知使用权在系统层面可以访问所有通知。OmniSMS 会在解析标题或正文前先检查来源包名，只允许 OPPO 系统短信 App `com.android.mms`，其他应用通知直接忽略。
+
+完整要求见 [`docs/03-security-and-privacy.md`](docs/03-security-and-privacy.md)。
+
+## 可靠性设计
+
+### 先落盘，再上传
+
+普通 SMS 在广播回调返回前同步写入本地加密队列。网络 I/O 在后台执行，即使上传失败，短信也不会因为进程结束而直接丢失。
+
+### 多入口补偿
+
+Android 端同时使用：
+
+1. 清单 `BroadcastReceiver`，用于进程未运行时接收系统短信广播；
+2. 前台服务动态接收器，规避部分 ColorOS 清单广播限制；
+3. 系统短信收件箱观察器与递增游标补查；
+4. 通知监听器，兼容不进入标准短信表的 5G消息。
+
+所有入口共享不可逆消息指纹和本地唯一约束，避免重复邮件。
+
+### 短时唤醒
+
+0.4.4 不常驻持有 CPU 唤醒锁：
+
+- SMS 广播交接：最长 15 秒；
+- 5G消息通知合并：最长 10 秒；
+- 上传处理：最长 30 秒。
+
+处理完成后立即释放。可靠运行依赖正确的 ColorOS 后台设置，而不是让 CPU 永不休眠。
+
+### 两级重试
+
+- Android：WorkManager 在网络恢复后按指数退避重试。
+- VPS：区分临时 SMTP 错误和永久配置错误；临时错误自动重试，永久错误停止无意义重试。
+
+## 开发与构建
+
+### 依赖版本
+
+| 部分 | 要求 |
+|---|---|
+| JDK | 17 |
+| Android SDK | 36 |
+| Android Gradle Plugin | 9.2.0 |
+| Gradle | 9.4.1 或兼容版本 |
+| Go | 1.24 |
+| 服务端目标 | Linux `amd64` |
+
+### Android 自动检查
+
+在 `android/` 目录执行：
+
+```powershell
+gradle testDebugUnitTest lintRelease assembleRelease
+```
+
+主要输出：
+
+| 产物 | 路径 |
+|---|---|
+| 单元测试报告 | `android/app/build/reports/tests/testDebugUnitTest/` |
+| Lint 报告 | `android/app/build/reports/lint-results-release.html` |
+| 发布 APK | `android/app/build/outputs/apk/release/app-release.apk` |
+
+正式发布前验证签名：
+
+```powershell
+apksigner verify --verbose --print-certs app-release.apk
+```
+
+没有配置正式签名时，`assembleRelease` 的结果不能视为可覆盖生产安装的正式包。
+
+### Go 服务端检查
+
+在 `server/` 目录执行：
+
+```bash
+go test ./...
+go vet ./...
+go build ./cmd/omnisms-server
+```
+
+构建 Linux `amd64` 单文件：
+
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go build -o build/omnisms-server-linux-amd64 ./cmd/omnisms-server
+```
+
+生成设备密钥：
+
+```bash
+go run ./cmd/omnisms-keygen
+```
+
+密钥输出只能进入 VPS 生产配置和 Android 安全配对流程，不应复制到源码、文档或公开聊天记录。
+
+## 测试与验收
+
+每个候选版本至少执行：
+
+- Android 单元测试、发布版 Lint、正式签名构建和 APK 签名校验；
+- Go 单元测试、`go vet`、Linux 生产构建和健康检查；
+- 普通 SMS、长短信、中文与特殊字符测试；
+- 双卡卡槽信息和重复抑制测试；
+- ColorOS 锁屏、上划清理与手机重启测试；
+- 断网排队和恢复补发测试；
+- 5G消息通知合并与其他应用通知隔离测试；
+- VPS 重启、备份恢复和二进制回滚测试；
+- Gmail 实投、iPhone 通知和两个时间字段检查；
+- 日志敏感信息和 24 小时清理检查。
+
+测试矩阵见 [`docs/07-testing-and-acceptance.md`](docs/07-testing-and-acceptance.md)。在剩余发布门槛完成前，不应将候选版本描述为最终生产验收完成。
+
+## 常见问题
+
+<details>
+<summary><strong>手机收到了短信，但 Gmail 没有邮件</strong></summary>
+
+依次检查：
+
+1. OmniSMS 转发总开关是否开启；
+2. “接收短信”和“读取短信”权限是否已授予；
+3. 前台状态通知是否存在；
+4. Android 电池优化是否已豁免；
+5. ColorOS 四个后台开关是否全部开启；
+6. App 首页是否显示待发送或永久失败项目；
+7. 手机是否可以访问配置的 HTTPS 地址；
+8. VPS 的 `/health/ready` 是否正常；
+9. Gmail 是否把邮件归入垃圾邮件或其他分类。
+
+先发送 App 内置虚构测试，可以区分“手机未采集到短信”和“服务器/Gmail 投递失败”。
+
+</details>
+
+<details>
+<summary><strong>为什么锁屏后只有亮屏才转发？</strong></summary>
+
+这通常是 ColorOS 厂商级后台冻结导致的。即使 Android 标准电池白名单已经生效，只要“允许完全后台行为”“允许应用自启动”或“允许应用关联启动”仍关闭，系统就可能把短信回调延迟到亮屏。请按 [ColorOS 后台设置](#coloros-后台设置) 逐项检查。
+
+</details>
+
+<details>
+<summary><strong>断网期间收到短信怎么办？</strong></summary>
+
+消息会先进入 Android 本地加密队列。网络恢复后，前台服务和 WorkManager 会自动重试。邮件会同时显示原始短信接收时间、实际转发时间，并标记为“断网/失败后补发”。
+
+</details>
+
+<details>
+<summary><strong>为什么邮件内容比短信详情页短？</strong></summary>
+
+这通常说明消息走的是 ColorOS 5G消息通知入口。系统通知提供多少正文，OmniSMS 才能读取多少；如果通知只显示“点击查看详情”，App 无法绕过系统限制读取详情页隐藏内容。普通 SMS 路径会优先保留完整正文。
+
+</details>
+
+<details>
+<summary><strong>为什么升级后补发了旧短信？</strong></summary>
+
+OmniSMS 保存系统短信数据库的递增游标，并最多补查 24 小时内、游标之后的新记录。前台服务曾被系统终止或广播被跳过时，服务恢复可能发现并补发遗漏项；首次授权不会批量上传更早的历史短信。
+
+</details>
+
+<details>
+<summary><strong>可以从最近任务中划掉 OmniSMS 吗？</strong></summary>
+
+不建议。ColorOS 可能把上划清理视为强制结束，即使前台通知存在，也可能产生实时监听空窗。0.4.4 提供收件箱补查和恢复机制，但补发不能替代即时转发。
+
+</details>
+
+<details>
+<summary><strong>Gmail 邮件会在 24 小时后自动删除吗？</strong></summary>
+
+不会。24 小时限制只适用于 Android/VPS 的临时正文和状态数据。进入 Gmail 后，邮件由用户自己的 Gmail 保留和删除规则管理。
+
+</details>
+
+## 使用边界
+
+- 单个用户、单台 Android 来源手机；
+- 只监听用户本人设备上的 SMS 和受限的系统短信通知；
+- 不支持从 Gmail 或网页回复短信；
+- 不支持远程控制手机发送短信；
+- 不提供网页短信收件箱；
+- 不提供多人权限、公开注册或 SaaS 托管；
+- SIM 1 当前因运营商环境原因未完成真实接收验证，不能将 SIM 2 结果自动视为 SIM 1 已通过。
+
+## 项目结构
 
 ```text
 OmniSMS/
-├─ android/                         Android 客户端源码与签名辅助脚本
+├─ android/                         Android 客户端与签名辅助脚本
 │  └─ app/src/
 │     ├─ main/                      正式客户端代码和资源
 │     ├─ debug/                     仅调试构建使用的测试入口
@@ -132,233 +513,44 @@ OmniSMS/
 ├─ server/                          Go 服务端、配置示例和自动测试
 │  ├─ cmd/omnisms-server/           服务主程序
 │  ├─ cmd/omnisms-keygen/           设备密钥生成工具
-│  ├─ cmd/omnisms-smoketest/        不含真实短信的冒烟测试工具
-│  └─ internal/                     API、认证、存储、邮件和队列实现
-├─ deploy/                          systemd、Nginx 和首次配置模板
+│  ├─ cmd/omnisms-smoketest/        固定虚构数据冒烟测试
+│  └─ internal/                     API、认证、存储、邮件和队列
+├─ deploy/                          systemd、Nginx 与首次配置模板
 ├─ validation/android-sms-probe/    ColorOS 可行性验证 App
-├─ docs/                            需求、架构、安全、测试和运维标准
+├─ docs/                            需求、架构、安全、测试和运维文档
 ├─ artifacts/                       构建产物说明，不保存生产秘密
 ├─ Codex.md                         仓库开发工作入口
-└─ README.md                        项目总览
+└─ README.md                        项目首页
 ```
 
-以下目录或文件只存在于开发电脑并被 Git 忽略：
+下列文件仅存在于开发电脑并被 Git 忽略：
 
-- `.release/`：正式签名密钥和本地 APK。
-- `android/signing.local.properties`：正式签名配置。
+- `.release/`：正式签名密钥和本地发布产物；
+- `android/signing.local.properties`：本地签名配置；
 - 生产 `.env`、设备密钥和 Gmail 应用专用密码。
-
-## 开发环境
-
-### Android
-
-- JDK 17。
-- Android SDK 36。
-- Android Gradle Plugin 9.2.0。
-- Gradle 9.4.1 或兼容版本。
-
-### 服务端
-
-- Go 1.24。
-- Linux `amd64` 生产目标。
-- SQLite 使用纯 Go 驱动，生产构建不依赖系统 SQLite 开发包。
-
-## 本地构建与检查
-
-### Android 自动检查
-
-在 `android/` 目录执行：
-
-```text
-gradle testDebugUnitTest lintRelease assembleRelease
-```
-
-主要输出：
-
-- 单元测试报告：`android/app/build/reports/tests/testDebugUnitTest/`
-- Lint 报告：`android/app/build/reports/lint-results-release.html`
-- 发布 APK：`android/app/build/outputs/apk/release/app-release.apk`
-
-没有配置正式签名时，发布任务不能视为可升级的正式包。不要用调试签名包覆盖生产安装。
-
-### 首次创建正式签名
-
-仅在确定尚未创建过签名密钥时运行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\android\create-release-keystore.ps1
-```
-
-生成后必须分别加密备份密钥文件和密码。签名密钥丢失后，将无法以升级方式安装相同包名的新版本。不得把 `.release/`、签名密码或 `signing.local.properties` 提交到 GitHub。
-
-发布前至少执行：
-
-```text
-apksigner verify --verbose --print-certs app-release.apk
-```
-
-并确认版本号、APK SHA-256 和签名证书 SHA-256 与发布记录一致。
-
-### Go 服务端检查
-
-在 `server/` 目录执行：
-
-```text
-go test ./...
-go vet ./...
-go build ./cmd/omnisms-server
-```
-
-构建 Linux x86_64 单文件：
-
-```text
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/omnisms-server-linux-amd64 ./cmd/omnisms-server
-```
-
-生成设备密钥：
-
-```text
-go run ./cmd/omnisms-keygen
-```
-
-密钥输出只能写入 VPS 生产配置和 Android 安全配对流程，不要复制到文档、聊天记录或 Git 提交。
-
-## 服务端配置
-
-配置模板位于 `server/.env.example`，包含以下类别：
-
-- 本机监听地址和 SQLite 路径。
-- 设备 ID 与设备密钥。
-- Gmail SMTP 地址、端口和应用专用密码。
-- 发件人与收件人地址。
-- 展示时区、24 小时保留期、认证时间偏差和重试周期。
-
-生产配置建议保存为：
-
-```text
-/etc/omnisms/omnisms.env
-```
-
-文件权限必须为 `0600`，且不得回传到开发电脑或提交仓库。Gmail 必须启用两步验证并使用应用专用密码，不能保存 Gmail 普通登录密码。
-
-服务端接口：
-
-| 方法 | 路径 | 用途 |
-|---|---|---|
-| `GET` | `/health/live` | 检查进程是否存活。 |
-| `GET` | `/health/ready` | 检查数据库和服务是否就绪。 |
-| `POST` | `/v1/messages` | 接收经过签名和幂等保护的短信消息。 |
-
-完整请求签名格式和响应语义见 `server/README.md` 与 `docs/02-technical-architecture.md`。
-
-## VPS 部署摘要
-
-推荐目录：
-
-```text
-/opt/omnisms/       程序文件
-/etc/omnisms/       生产配置和秘密
-/var/lib/omnisms/   SQLite 数据
-```
-
-推荐执行顺序：
-
-1. 在本地完成 Go 测试、静态检查和 Linux `amd64` 构建。
-2. 在 VPS 创建专用非 root 用户及程序、配置、数据目录。
-3. 上传版本化服务二进制，并保存上一版本作为回滚材料。
-4. 从 `server/.env.example` 创建 VPS 本地生产配置，设置严格权限。
-5. 安装 `deploy/omnisms.service`，先检查本机健康接口。
-6. 参考 `deploy/nginx-omnisms.conf.example` 添加独立反向代理配置。
-7. 执行 `nginx -t` 成功后才平滑重载，不能覆盖现有代理节点配置。
-8. 从公网确认 HTTPS 证书有效，并使用固定虚构短信完成 Gmail 冒烟测试。
-
-详细命令、回滚要求和故障处理见 `docs/08-deployment-and-operations.md`。生产部署不得通过关闭 HTTPS、证书校验、请求认证或数据加密来绕过错误。
-
-## Android 首次配置
-
-1. 安装使用正式私钥签名的 APK。
-2. 在 App 中保存 HTTPS 服务地址、设备 ID 和设备密钥。
-3. 授予“接收短信”和“读取短信”权限。
-4. 开启 OmniSMS 转发总开关。
-5. 允许 Android 电池优化豁免。在「应用详情 → 耗电管理」中确认“允许唤醒前台”“允许完全后台行为”“允许应用自启动”“允许应用关联启动”全部开启。
-6. 如需接收 ColorOS 5G消息，单独授予通知使用权。
-7. 使用 App 内置的固定虚构测试消息验证 HTTPS 和 Gmail 链路。
-8. 再进行锁屏普通 SMS、5G消息、断网补发和手机重启测试。
-
-覆盖升级正式版时，必须使用同一签名证书且提高 `versionCode`。正常的覆盖安装会保留配对信息和本地待发队列；卸载后重装会清除 App 数据，需要重新配对。
-
-## 安全与隐私
-
-- 完整短信、验证码、设备密钥和 Gmail 应用专用密码属于最高敏感数据，不进入源码、Git、普通日志或崩溃报告。
-- Android 本地正文使用 Android Keystore 保护的密钥加密。
-- App 到 VPS 只允许 HTTPS，不提供忽略证书错误或回退 HTTP 的选项。
-- 请求使用时间戳、随机数、幂等键和 HMAC-SHA256 签名防止伪造与重放。
-- 通知使用权虽然在系统层面可访问所有通知，但实现只允许 OPPO 系统短信 App；其他应用在解析前立即丢弃。
-- VPS 只为投递和重试短期保存正文，最长保留 24 小时；Gmail 中已收到的邮件不受该清理规则影响。
-- 测试必须使用固定虚构内容，不应复制真实验证码到测试代码、文档或问题报告。
-
-完整安全要求见 `docs/03-security-and-privacy.md`。
-
-## 测试与验收
-
-每个发布候选至少执行：
-
-- Android 单元测试、发布版 Lint、正式签名构建和 APK 签名校验。
-- Go 单元测试、`go vet`、生产构建和健康检查。
-- 普通 SMS、5G消息、多段短信、双卡元数据和重复抑制测试。
-- 锁屏、断网、手机重启、VPS 重启和服务端回滚测试。
-- Gmail 实投、iPhone 通知和时间字段检查。
-- 日志敏感信息检查、24 小时清理和备份恢复演练。
-
-当前逐项结果和环境例外见：
-
-- `docs/07-testing-and-acceptance.md`
-- `docs/10-development-status.md`
-- `docs/11-release-acceptance-0.3.4.md`
-
-在剩余发布门槛完成前，不应把候选版描述为最终生产验收完成。
-
-## 常见问题
-
-### 手机收到短信但 Gmail 没有邮件
-
-依次检查 App 总开关、短信权限、前台状态通知、电池优化豁免，以及 ColorOS 的“允许完全后台行为、允许应用自启动、允许应用关联启动、允许唤醒前台”，再检查待发送数量和网络状态。使用 App 内置虚构测试区分“手机没有采集到短信”和“服务器或 Gmail 投递失败”。
-
-### 断网期间收到短信怎么办
-
-消息会先进入本地加密队列。网络恢复后 WorkManager 和前台服务会自动重试，邮件中同时显示原始接收时间与实际转发时间，并标记为补发。
-
-### 为什么邮件内容比短信详情页短
-
-这通常表示消息走的是 ColorOS 5G消息通知入口。系统通知提供多少正文，OmniSMS 才能取得多少；如果通知写着“点击查看详情”，App 无法绕过系统限制读取详情页隐藏内容。
-
-### 为什么升级后突然补发旧短信
-
-OmniSMS 会保存系统短信数据库的递增游标，并最多补查 24 小时内、游标之后的新记录。前台服务曾被 ColorOS 结束或广播被跳过时，升级/恢复服务可能发现并补发遗漏项，但不会在首次授权时批量上传更早的历史短信。
-
-### 能不能把 OmniSMS 从最近任务中划掉
-
-ColorOS 可能把上划清理视为强制结束，即使前台通知存在也可能停止实时服务。`0.4.4` 包含同步可靠入队、动态接收、延迟恢复补查、跨通道可靠接管和短时唤醒保护，但为获得最高可靠性，仍建议保留前台服务通知并避免主动划掉 App。
-
-### Gmail 邮件会在 24 小时后删除吗
-
-不会。24 小时限制只适用于 Android/VPS 的临时正文和状态数据。进入 Gmail 后，邮件按照用户自己的 Gmail 保留和删除规则管理。
 
 ## 项目文档
 
 | 文档 | 用途 |
 |---|---|
-| `Codex.md` | 仓库开发工作入口和强制规则。 |
-| `docs/01-product-requirements.md` | 已确认需求、范围和验收结果。 |
-| `docs/02-technical-architecture.md` | Android、VPS、数据流、API 和架构决定。 |
-| `docs/03-security-and-privacy.md` | 短信、凭据、日志和数据保留标准。 |
-| `docs/04-ui-ux-specification.md` | Android 页面、状态和权限引导。 |
-| `docs/05-development-standards.md` | 代码、Git、配置和错误处理规范。 |
-| `docs/06-implementation-plan.md` | 阶段计划和完成定义。 |
-| `docs/07-testing-and-acceptance.md` | 测试矩阵和发布门槛。 |
-| `docs/08-deployment-and-operations.md` | VPS 部署、升级、备份和故障处理。 |
-| `docs/09-feasibility-validation.md` | ColorOS 真机可行性验证过程。 |
-| `docs/10-development-status.md` | 当前实现、证据、缺口和下一步。 |
-| `docs/11-release-acceptance-0.3.4.md` | 正式签名版本的逐项验收记录。 |
+| [`Codex.md`](Codex.md) | 仓库工作入口和强制规则。 |
+| [`docs/README.md`](docs/README.md) | 文档导航、状态和维护规则。 |
+| [`docs/01-product-requirements.md`](docs/01-product-requirements.md) | 已确认需求、范围和验收目标。 |
+| [`docs/02-technical-architecture.md`](docs/02-technical-architecture.md) | Android、VPS、数据流、API 和架构决策。 |
+| [`docs/03-security-and-privacy.md`](docs/03-security-and-privacy.md) | 短信、凭据、日志和数据保留标准。 |
+| [`docs/04-ui-ux-specification.md`](docs/04-ui-ux-specification.md) | Android 页面、状态与权限引导。 |
+| [`docs/05-development-standards.md`](docs/05-development-standards.md) | 代码、Git、配置和错误处理规范。 |
+| [`docs/06-implementation-plan.md`](docs/06-implementation-plan.md) | 阶段计划与完成定义。 |
+| [`docs/07-testing-and-acceptance.md`](docs/07-testing-and-acceptance.md) | 测试矩阵与发布门槛。 |
+| [`docs/08-deployment-and-operations.md`](docs/08-deployment-and-operations.md) | VPS 部署、升级、备份和故障处理。 |
+| [`docs/09-feasibility-validation.md`](docs/09-feasibility-validation.md) | ColorOS 真机可行性验证。 |
+| [`docs/10-development-status.md`](docs/10-development-status.md) | 当前实现、验证证据、缺口与下一步。 |
+| [`docs/11-release-acceptance-0.3.4.md`](docs/11-release-acceptance-0.3.4.md) | 正式签名版本的逐项验收记录。 |
 
-文档和实现不一致时，任务不算完成。需求变化、架构决定、部署步骤或发布结果发生改变时，应同步更新相关文档。
+---
+
+<div align="center">
+
+**个人自用 · 私人部署 · 请妥善保护短信、验证码与签名材料**
+
+</div>
